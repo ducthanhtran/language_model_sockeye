@@ -1,16 +1,31 @@
-# TODO: language model as a computation graph
-
 from sockeye.config import Config
+from sockeye.rnn import RNNConfig, get_stacked_rnn
+from sockeye.decoder import Decoder
+
+
+LANGUAGE_MODEL_PREFIX = "lm_"
+
 
 class LanguageModelConfig(Config):
     """
     Defines the configuration for our stacked RNN language model.
     """
     def __init__(self,
-                 embedding_dim: int,
-                 num_rnn_layers: int,
-                 max_seq_len_target: int) -> None:
+                 max_seq_len_target: int,
+                 rnn_config: RNNConfig) -> None:
         super().__init__()
-        self.embedding_dim = embedding_dim
-        self.num_rnn_layers = num_rnn_layers
         self.max_seq_len_target = max_seq_len_target
+        self.rnn_config = rnn_config
+
+
+class LanguageModel(Decoder):
+
+    def __init__(self,
+                 lm_config: LanguageModelConfig,
+                 prefix: str = LANGUAGE_MODEL_PREFIX) -> None:
+        self.lm_config = lm_config
+        self.rnn_config = self.lm_config.rnn_config
+        self.prefix = prefix
+
+        # use Sockeye's internal stacked RNN computation graph
+        self.stacked_rnn = get_stacked_rnn(config=self.rnn_config, prefix=self.prefix)
