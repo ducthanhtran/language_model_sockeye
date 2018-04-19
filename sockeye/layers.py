@@ -273,6 +273,7 @@ def broadcast_to_heads(x: mx.sym.Symbol, num_heads: int, ndim: int, fold_heads: 
 def dot_attention(queries: mx.sym.Symbol,
                   keys: mx.sym.Symbol,
                   values: mx.sym.Symbol,
+                  lm: Optional[mx.sym.Symbol] = None,
                   lengths: Optional[mx.sym.Symbol] = None,
                   dropout: float = 0.0,
                   bias: Optional[mx.sym.Symbol] = None,
@@ -280,9 +281,10 @@ def dot_attention(queries: mx.sym.Symbol,
     """
     Computes dot attention for a set of queries, keys, and values.
 
-    :param queries: Attention queries. Shape: (n, lq, d).
-    :param keys: Attention keys. Shape: (n, lk, d).
+    :param queries: Attention queries. Shape: (n, lq, dv).
+    :param keys: Attention keys. Shape: (n, lk, dv).
     :param values: Attention values. Shape: (n, lk, dv).
+    :param lm: Attention keys/values for lm information. Shape: (n, lq, dv).
     :param lengths: Optional sequence lengths of the keys. Shape: (n,).
     :param dropout: Dropout probability.
     :param bias: Optional 3d bias tensor.
@@ -292,8 +294,14 @@ def dot_attention(queries: mx.sym.Symbol,
     utils.check_condition(lengths is not None or bias is not None,
                           "Must provide either length or bias argument for masking")
 
+    # n = batch_sizes * heads
     # (n, lq, lk)
     logits = mx.sym.batch_dot(lhs=queries, rhs=keys, transpose_b=True, name='%sdot' % prefix)
+    if lm is not None:
+        hadamard_lm = mx.sym.broadcast_mul(lhs=queries, rhs=lm, name='%shadamard_lm' % prefix)
+        logits_lm = mx.sym.sum(hadamard_lm, axis=2, keepdims=True)    # (n, lq, 1)
+        # (n, lq, lk) | (n, lq, 1) -> (n, lq, lk + 1)
+        logits = mx.sym.concat(logits, logits_lm, dim=2)
 
     if lengths is not None:
         # mask lk dimension
@@ -312,8 +320,22 @@ def dot_attention(queries: mx.sym.Symbol,
     probs = mx.sym.softmax(logits, axis=-1)
     probs = mx.sym.Dropout(probs, p=dropout) if dropout > 0.0 else probs
 
-    # (n, lq, lk) x (n, lk, dv) -> (n, lq, dv)
-    return mx.sym.batch_dot(lhs=probs, rhs=values, name='%scontexts' % prefix)
+    if lm is not None:
+        # (n, lq, lk + 1) -> (n, lq, lk), (n, lq, 1)
+        probs_src = mx.sym.slice_axis(data=probs, axis=2, begin=0, end=-1)
+        probs_lm = mx.sym.slice_axis(data=probs, axis=2, begin=-1, end=None)
+
+        # (n, lq, lk) x (n, lk, dv) -> (n, lq, dv)
+        c_src = mx.sym.batch_dot(lhs=probs_src, rhs=values, name='%scontexts_src' % prefix)
+
+        # (n, lq, 1) mul (n, lq, dv) -> (n, lq, dv)
+        c_lm = mx.sym.broadcast_mul(lhs=probs_lm, rhs=lm, name='%scontexts_lm' % prefix)
+
+        # (n, lq, dv) + (n, lq, dv) -> (n, lq, dv)
+        return mx.sym.broadcast_add(c_src, c_lm, name='%scontexts' % prefix)
+    else:
+        # (n, lq, lk) x (n, lk, dv) -> (n, lq, dv)
+        return mx.sym.batch_dot(lhs=probs, rhs=values, name='%scontexts' % prefix)
 
 
 class MultiHeadAttentionBase:
@@ -347,6 +369,7 @@ class MultiHeadAttentionBase:
                 queries: mx.sym.Symbol,
                 keys: mx.sym.Symbol,
                 values: mx.sym.Symbol,
+                lm: Optional[mx.sym.Symbol] = None,
                 lengths: Optional[mx.sym.Symbol] = None,
                 bias: Optional[mx.sym.Symbol] = None) -> mx.sym.Symbol:
         """
@@ -367,9 +390,10 @@ class MultiHeadAttentionBase:
         keys = split_heads(keys, self.depth_per_head, self.heads)
         values = split_heads(values, self.depth_per_head, self.heads)
         lengths = broadcast_to_heads(lengths, self.heads, ndim=1, fold_heads=True) if lengths is not None else lengths
+        lm = split_heads(lm, self.depth_per_head, self.heads) if lm is not None else lm
 
         # (batch*heads, query_max_length, depth_per_head)
-        contexts = dot_attention(queries, keys, values,
+        contexts = dot_attention(queries, keys, values, lm=lm,
                                  lengths=lengths, dropout=self.dropout, bias=bias, prefix=self.prefix)
 
         # (batch, query_max_length, depth)
@@ -466,13 +490,14 @@ class MultiHeadAttention(MultiHeadAttentionBase):
                  dropout: float = 0.0) -> None:
         super().__init__(prefix, depth_att, heads, depth_out, dropout)
         self.w_q2h = mx.sym.Variable("%sq2h_weight" % prefix)
-        self.w_k2h = mx.sym.Variable("%sk2h_weight" % prefix)
-        self.w_v2h = mx.sym.Variable("%sv2h_weight" % prefix)
+        self.w_kv2h = mx.sym.Variable("%skv2h_weight" % prefix)
+        self.w_lm2h = mx.sym.Variable("%slm2h_weight" % prefix)
 
     def __call__(self,
                  queries: mx.sym.Symbol,
                  memory: mx.sym.Symbol,
                  memory_lengths: Optional[mx.sym.Symbol] = None,
+                 memory_lm: Optional[mx.sym.Symbol] = None,
                  bias: Optional[mx.sym.Symbol] = None) -> mx.sym.Symbol:
         """
         Computes multi-head attention for queries given a memory tensor.
@@ -483,9 +508,24 @@ class MultiHeadAttention(MultiHeadAttentionBase):
         :param queries: Query tensor. Shape: (batch, query_max_length, input_depth).
         :param memory: Memory data to attend to. Shape: (batch, memory_max_length, input_depth).
         :param memory_lengths: Optional lengths of memory to mask attention scores. Shape: (batch, 1).
+        :param memory_lm: LM memory to attend to. Shape: (batch, query_max_length, input_depth).
         :param bias: Optional 3d bias tensor to mask attention scores.
         :return: Symbol of shape (batch, query_seq_len, output_depth).
         """
+        # (batch, memory_max_length, depth * 2)
+        combined = mx.sym.FullyConnected(data=memory,
+                                         weight=self.w_kv2h,
+                                         no_bias=True,
+                                         num_hidden=self.depth * 2,
+                                         flatten=False,
+                                         name="%skv_transform" % self.prefix)
+
+        # split into query, keys and values
+        # (batch, memory_max_length, depth)
+        # NOTE: requires depth to be equal across all 2 parts.
+        # pylint: disable=unbalanced-tuple-unpacking
+        keys, values = mx.sym.split(data=combined, num_outputs=2, axis=2)
+
         # (batch, query_max_length, depth)
         queries = mx.sym.FullyConnected(data=queries,
                                         weight=self.w_q2h,
@@ -494,25 +534,29 @@ class MultiHeadAttention(MultiHeadAttentionBase):
                                         flatten=False,
                                         name="%sq_transform" % self.prefix)
 
-        # (batch, memory_max_length, depth)
-        keys = mx.sym.FullyConnected(data=memory,
-                                     weight=self.w_k2h,
-                                     no_bias=True,
-                                     num_hidden=self.depth,
-                                     flatten=False,
-                                     name="%sk_transform" % self.prefix)
-
-        # (batch, memory_max_length, depth)
-        values = mx.sym.FullyConnected(data=memory,
-                                       weight=self.w_v2h,
+        # (batch, query_max_length, depth)
+        if memory_lm is not None:
+            lm = mx.sym.FullyConnected(data=memory_lm,
+                                       weight=self.w_lm2h,
                                        no_bias=True,
                                        num_hidden=self.depth,
                                        flatten=False,
-                                       name="%sv_transform" % self.prefix)
+                                       name="%slm_transform" % self.prefix)
+            #print(str(lm.infer_shape()[1][0]))
+            # lm vector is appended to the left of source
+            bias = mx.sym.expand_dims(bias, axis=0)
+            bias = mx.sym.pad(bias, mode="constant", pad_width=(0,0,0,0,0,0,1,0))
+            bias = mx.sym.sum(bias, axis=0)
+            #print(str(bias.infer_shape(source=(64,40,1))[1][0]))
+            if memory_lengths is not None:
+                memory_lengths += 1
+        else:
+            lm = None
 
         return self._attend(queries,
                             keys,
                             values,
+                            lm=lm,
                             bias=bias,
                             lengths=memory_lengths)
 

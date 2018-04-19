@@ -11,7 +11,7 @@
 # express or implied. See the License for the specific language governing
 # permissions and limitations under the License.
 
-from typing import Dict, Optional, TYPE_CHECKING
+from typing import Dict, Optional, Tuple
 
 import mxnet as mx
 import numpy as np
@@ -20,13 +20,11 @@ from . import config
 from . import constants as C
 from . import layers
 
-if TYPE_CHECKING:
-    from . import encoder
-
 
 class TransformerConfig(config.Config):
 
     def __init__(self,
+                 batch_size: int,
                  model_size: int,
                  attention_heads: int,
                  feed_forward_num_hidden: int,
@@ -40,9 +38,12 @@ class TransformerConfig(config.Config):
                  postprocess_sequence: str,
                  max_seq_len_source: int,
                  max_seq_len_target: int,
-                 conv_config: Optional['encoder.ConvolutionalEmbeddingConfig'] = None,
-                 dtype: str = C.DTYPE_FP32) -> None:  # type: ignore
+                 dummy_info: bool,
+                 dummy_type: str,
+                 dummy_size: int,
+                 conv_config: Optional['ConvolutionalEmbeddingConfig'] = None) -> None:  # type: ignore
         super().__init__()
+        self.batch_size = batch_size
         self.model_size = model_size
         self.attention_heads = attention_heads
         self.feed_forward_num_hidden = feed_forward_num_hidden
@@ -56,8 +57,10 @@ class TransformerConfig(config.Config):
         self.postprocess_sequence = postprocess_sequence
         self.max_seq_len_source = max_seq_len_source
         self.max_seq_len_target = max_seq_len_target
+        self.dummy_info = dummy_info
+        self.dummy_type = dummy_type
+        self.dummy_size = dummy_size
         self.conv_config = conv_config
-        self.dtype = dtype
 
 
 class TransformerEncoderBlock:
@@ -120,6 +123,7 @@ class TransformerDecoderBlock:
     def __init__(self,
                  config: TransformerConfig,
                  prefix: str) -> None:
+        self.config = config
         self.prefix = prefix
         self.pre_self_attention = TransformerProcessBlock(sequence=config.preprocess_sequence,
                                                           num_hidden=config.model_size,
@@ -134,6 +138,12 @@ class TransformerDecoderBlock:
                                                            num_hidden=config.model_size,
                                                            dropout=config.dropout_prepost,
                                                            prefix="%satt_self_post_" % prefix)
+
+        if config.dummy_type is not None:
+            self.conc_dummy_information = ConcatDummyInformation(num_hidden=config.model_size,
+                                                                 seq_length=config.max_seq_len_target,
+                                                                 dummy_type=config.dummy_type,
+                                                                 dummy_size=config.dummy_size)
 
         self.pre_enc_attention = TransformerProcessBlock(sequence=config.preprocess_sequence,
                                                          num_hidden=config.model_size,
@@ -162,6 +172,34 @@ class TransformerDecoderBlock:
                                                num_hidden=config.model_size,
                                                dropout=config.dropout_prepost,
                                                prefix="%sff_post_" % prefix)
+        # ORIGINAL
+        # self.pre_enc_attention = TransformerProcessBlock(sequence=config.preprocess_sequence,
+        #                                                  num_hidden=config.model_size,
+        #                                                  dropout=config.dropout_prepost,
+        #                                                  prefix="%satt_enc_pre_" % prefix)
+        # self.enc_attention = layers.MultiHeadAttention(depth_att=config.model_size,
+        #                                                heads=config.attention_heads,
+        #                                                depth_out=config.model_size,
+        #                                                dropout=config.dropout_attention,
+        #                                                prefix="%satt_enc_" % prefix)
+        # self.post_enc_attention = TransformerProcessBlock(sequence=config.postprocess_sequence,
+        #                                                   num_hidden=config.model_size,
+        #                                                   dropout=config.dropout_prepost,
+        #                                                   prefix="%satt_enc_post_" % prefix)
+        #
+        # self.pre_ff = TransformerProcessBlock(sequence=config.preprocess_sequence,
+        #                                       num_hidden=config.model_size,
+        #                                       dropout=config.dropout_prepost,
+        #                                       prefix="%sff_pre_" % prefix)
+        # self.ff = TransformerFeedForward(num_hidden=config.feed_forward_num_hidden,
+        #                                  num_model=config.model_size,
+        #                                  act_type=config.act_type,
+        #                                  dropout=config.dropout_act,
+        #                                  prefix="%sff_" % prefix)
+        # self.post_ff = TransformerProcessBlock(sequence=config.postprocess_sequence,
+        #                                        num_hidden=config.model_size,
+        #                                        dropout=config.dropout_prepost,
+        #                                        prefix="%sff_post_" % prefix)
 
     def __call__(self,
                  target: mx.sym.Symbol,
@@ -169,15 +207,26 @@ class TransformerDecoderBlock:
                  source: mx.sym.Symbol,
                  source_bias: mx.sym.Symbol,
                  cache: Optional[Dict[str, Optional[mx.sym.Symbol]]] = None) -> mx.sym.Symbol:
+        # TODO: lm (batch, query_max_length, lm_vocab_size)
+        if self.config.dummy_info:
+            lm = mx.sym.ones_like(target)  # no lm_vocab_size
+        else:
+            lm = None
+
         # self-attention
         target_self_att = self.self_attention(inputs=self.pre_self_attention(target, None),
                                               bias=target_bias,
                                               cache=cache)
         target = self.post_self_attention(target_self_att, target)
 
+        # dummy information
+        if self.config.dummy_type is not None:
+            source, source_bias = self.conc_dummy_information(data=source, bias=source_bias)
+
         # encoder attention
         target_enc_att = self.enc_attention(queries=self.pre_enc_attention(target, None),
                                             memory=source,
+                                            memory_lm=lm,
                                             bias=source_bias)
         target = self.post_enc_attention(target_enc_att, target)
 
@@ -186,6 +235,42 @@ class TransformerDecoderBlock:
         target = self.post_ff(target_ff, target)
 
         return target
+
+
+# unfinished
+# class ConcatExternalLanguageModel:
+#     """unfinished"""
+#     def __init__(self,
+#                  lm_path: str) -> None:
+#         self.lm = kenlm.Model(lm_path)
+#
+#     def __call__(self,
+#                  input: mx.sym.Symbol) -> mx.sym.Symbol:
+#         self.lm.score()
+
+
+class ConcatDummyInformation:
+    def __init__(self,
+                 num_hidden: int,
+                 seq_length: int,
+                 dummy_type: str,
+                 dummy_size: int) -> None:
+        if dummy_type == 'ones':
+            self.dummy = mx.sym.ones((64, 1, num_hidden)) # hard coded! - todo
+        elif dummy_type == 'zeros':
+            self.dummy = mx.sym.zeros((64, 1, num_hidden)) # hard coded! - todo
+        else:
+            raise ValueError("Unknown dummy type")
+        self.dummy_bias = mx.sym.zeros((64*4, 1, 1)) # hard coded! - todo
+
+    def __call__(self,
+                 data: mx.sym.Symbol,
+                 bias: mx.sym.Symbol) -> Tuple[mx.sym.Symbol, mx.sym.Symbol]:
+        """
+        :param data: shape is (batch_size, seq_length, num_hidden)
+        :param bias: shape is (batch_size * heads, 1, seq_length)
+        """
+        return mx.sym.concat(data, self.dummy, dim=1), mx.sym.concat(bias, self.dummy_bias, dim=2)
 
 
 class TransformerProcessBlock:

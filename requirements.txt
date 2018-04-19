@@ -1,4 +1,1 @@
-pyyaml
-mxnet==1.1.0
-numpy>=1.12
-typing
+requirements.gpu-cu80.txt

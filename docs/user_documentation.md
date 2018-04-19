@@ -60,17 +60,17 @@ training with pre-computed values for the parameters of the model, but the
 parameters of the optimizer and other parts of the system are initialized from
 scratch.
 
-### Monitoring training progress with Tensorboard
+### Monitoring training progress with tensorboard
 
-Sockeye can write all evaluation metrics in a Tensorboard compatible format.
+Sockeye can write all evaluation metrics in a tensorboard compatible format.
 This way you can monitor the training progress in the browser.
-To enable this feature, install the MXNet-compatible interface, mxboard:
+If you have not installed dmlc's fork of tensorboard do so as follows:
 ```bash
-> pip install mxboard
+> pip install tensorboard==1.0.0a6
 ```
 
-For visualization, you still need the official tensorboard release (i.e. `pip install tensorboard`).
-Start tensorboard and point it to the model directory (or any parent directory):
+Now when training specify the additional command line parameter `--use-tensorboard` to `sockeye.train`. 
+Then start tensorboard and point it to the model directory (or any parent directory):
 ```bash
 > tensorboard --logdir model_dir
 ```

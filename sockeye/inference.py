@@ -19,7 +19,6 @@ import json
 import logging
 import os
 from collections import defaultdict
-from functools import partial
 from typing import Callable, Dict, Generator, List, NamedTuple, Optional, Tuple, Union, Set
 
 import mxnet as mx
@@ -385,9 +384,8 @@ def load_models(context: mx.context.Context,
 
     for model_folder, checkpoint in zip(model_folders, checkpoints):
         model_source_vocabs = vocab.load_source_vocabs(model_folder)
-        model_target_vocab = vocab.load_target_vocab(model_folder)
         source_vocabs.append(model_source_vocabs)
-        target_vocabs.append(model_target_vocab)
+        target_vocabs.append(vocab.vocab_from_json(os.path.join(model_folder, C.VOCAB_TRG_NAME)))
 
         model_version = utils.load_version(os.path.join(model_folder, C.VERSION_NAME))
         logger.info("Model version: %s", model_version)
@@ -745,6 +743,7 @@ class Translation:
         self.beam_history = beam_history
 
 
+
 def empty_translation() -> Translation:
     return Translation(target_ids=[], attention_matrix=np.asarray([[0]]), score=-np.inf)
 
@@ -868,8 +867,8 @@ def _concat_translations(translations: List[Translation], start_id: int, stop_id
 class Translator:
     """
     Translator uses one or several models to translate input.
-    The translator holds a reference to vocabularies to convert between word ids and text tokens for input and
-    translation strings.
+    It holds references to vocabularies to takes care of encoding input strings as word ids and conversion
+    of target ids into a translation string.
 
     :param context: MXNet context to bind modules to.
     :param ensemble_mode: Ensemble mode: linear or log_linear combination.
@@ -879,7 +878,6 @@ class Translator:
     :param target_vocab: Target vocabulary.
     :param restrict_lexicon: Top-k lexicon to use for target vocabulary restriction.
     :param store_beam: If True, store the beam search history and return it in the TranslatorOutput.
-    :param strip_unknown_words: If True, removes any <unk> symbols from outputs.
     """
 
     def __init__(self,
@@ -891,8 +889,7 @@ class Translator:
                  source_vocabs: List[vocab.Vocab],
                  target_vocab: vocab.Vocab,
                  restrict_lexicon: Optional[lexicon.TopKLexicon] = None,
-                 store_beam: bool = False,
-                 strip_unknown_words: bool = False) -> None:
+                 store_beam : bool = False) -> None:
         self.context = context
         self.length_penalty = length_penalty
         self.source_vocabs = source_vocabs
@@ -903,9 +900,6 @@ class Translator:
         self.start_id = self.vocab_target[C.BOS_SYMBOL]
         assert C.PAD_ID == 0, "pad id should be 0"
         self.stop_ids = {self.vocab_target[C.EOS_SYMBOL], C.PAD_ID}  # type: Set[int]
-        self.strip_ids = self.stop_ids.copy()  # ids to strip from the output
-        if strip_unknown_words:
-            self.strip_ids.add(self.vocab_target[C.UNK_SYMBOL])
         self.models = models
         self.interpolation_func = self._get_interpolation_func(ensemble_mode)
         self.beam_size = self.models[0].beam_size
@@ -1065,9 +1059,9 @@ class Translator:
         attention_matrix = translation.attention_matrix[1:, :]
 
         target_tokens = [self.vocab_target_inv[target_id] for target_id in target_ids]
-
         target_string = C.TOKEN_SEPARATOR.join(
-            tok for target_id, tok in zip(target_ids, target_tokens) if target_id not in self.strip_ids)
+            target_token for target_id, target_token in zip(target_ids, target_tokens) if
+            target_id not in self.stop_ids)
         attention_matrix = attention_matrix[:, :len(trans_input.tokens)]
 
         if isinstance(translation.beam_history, list):
@@ -1253,13 +1247,6 @@ class Translator:
                 models_output_layer_w.append(m.output_layer_w.take(vocab_slice_ids))
                 models_output_layer_b.append(m.output_layer_b.take(vocab_slice_ids))
 
-        # mxnet implementation is faster on GPUs
-        use_mxnet_topk = self.context != mx.cpu()
-        # offset for hypothesis indices in batch decoding
-        offset = np.repeat(np.arange(0, self.batch_size * self.beam_size, self.beam_size), self.beam_size)
-        topk = partial(utils.topk, k=self.beam_size, batch_size=self.batch_size, offset=offset,
-                       use_mxnet_topk=use_mxnet_topk)
-
         # (0) encode source sentence, returns a list
         model_states = self._encode(source, source_length)
 
@@ -1290,7 +1277,16 @@ class Translator:
                 scores = mx.nd.where(finished, pad_dist, scores)
 
             # (3) get beam_size winning hypotheses for each sentence block separately
-            best_hyp_indices[:], best_word_indices[:], scores_accumulated[:, 0] = topk(scores, t=t)
+            # TODO(fhieber): once mx.nd.topk is sped-up no numpy conversion necessary anymore.
+            scores = scores.asnumpy()  # convert to numpy once to minimize cross-device copying
+            for sent in range(self.batch_size):
+                rows = slice(sent * self.beam_size, (sent + 1) * self.beam_size)
+                sliced_scores = scores if t == 1 and self.batch_size == 1 else scores[rows]
+                # TODO we could save some tiny amount of time here by not running smallest_k for a finished sent
+                (best_hyp_indices[rows], best_word_indices[rows]), \
+                scores_accumulated[rows, 0] = utils.smallest_k(sliced_scores, self.beam_size, t == 1)
+                # offsetting since the returned smallest_k() indices were slice-relative
+                best_hyp_indices[rows] += rows.start
 
             # Map from restricted to full vocab ids if needed
             if self.restrict_lexicon:

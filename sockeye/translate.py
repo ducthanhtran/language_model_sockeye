@@ -18,7 +18,7 @@ import argparse
 import sys
 import time
 from contextlib import ExitStack
-from typing import Generator, Optional, List
+from typing import Generator, Optional, Iterable, List
 
 import mxnet as mx
 from math import ceil
@@ -70,11 +70,11 @@ def main():
             max_output_length_num_stds=args.max_output_length_num_stds,
             decoder_return_logit_inputs=args.restrict_lexicon is not None,
             cache_output_layer_w_b=args.restrict_lexicon is not None)
-        restrict_lexicon = None  # type: Optional[TopKLexicon]
+        restrict_lexicon = None # type: TopKLexicon
+        store_beam = args.output_type == C.OUTPUT_HANDLER_BEAM_STORE
         if args.restrict_lexicon:
             restrict_lexicon = TopKLexicon(source_vocabs[0], target_vocab)
-            restrict_lexicon.load(args.restrict_lexicon, k=args.restrict_lexicon_topk)
-        store_beam = args.output_type == C.OUTPUT_HANDLER_BEAM_STORE
+            restrict_lexicon.load(args.restrict_lexicon)
         translator = inference.Translator(context=context,
                                           ensemble_mode=args.ensemble_mode,
                                           bucket_source_width=args.bucket_width,
@@ -84,8 +84,7 @@ def main():
                                           source_vocabs=source_vocabs,
                                           target_vocab=target_vocab,
                                           restrict_lexicon=restrict_lexicon,
-                                          store_beam=store_beam,
-                                          strip_unknown_words=args.strip_unknown_words)
+                                          store_beam=store_beam)
         read_and_translate(translator=translator,
                            output_handler=output_handler,
                            chunk_size=args.chunk_size,

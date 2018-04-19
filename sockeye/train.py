@@ -297,7 +297,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
             for i, (v, mv) in enumerate(zip(source_vocabs, model_source_vocabs)):
                 utils.check_condition(vocab.are_identical(v, mv),
                                       "Prepared data and resumed model source vocab %d do not match." % i)
-            model_target_vocab = vocab.load_target_vocab(output_folder)
+            model_target_vocab = vocab.vocab_from_json(os.path.join(output_folder, C.VOCAB_TRG_NAME))
             utils.check_condition(vocab.are_identical(target_vocab, model_target_vocab),
                                   "Prepared data and resumed model target vocabs do not match.")
 
@@ -314,7 +314,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
         if resume_training:
             # Load the existing vocabs created when starting the training run.
             source_vocabs = vocab.load_source_vocabs(output_folder)
-            target_vocab = vocab.load_target_vocab(output_folder)
+            target_vocab = vocab.vocab_from_json(os.path.join(output_folder, C.VOCAB_TRG_NAME))
 
             # Recover the vocabulary path from the data info file:
             data_info = cast(data_io.DataInfo, Config.load(os.path.join(output_folder, C.DATA_INFO)))
@@ -395,6 +395,7 @@ def create_encoder_config(args: argparse.Namespace,
                 encoder_transformer_model_size, num_embed_source + total_source_factor_size))
             encoder_transformer_model_size = num_embed_source + total_source_factor_size
         config_encoder = transformer.TransformerConfig(
+            batch_size=args.batch_size,
             model_size=encoder_transformer_model_size,
             attention_heads=args.transformer_attention_heads,
             feed_forward_num_hidden=args.transformer_feed_forward_num_hidden,
@@ -408,6 +409,9 @@ def create_encoder_config(args: argparse.Namespace,
             postprocess_sequence=encoder_transformer_postprocess,
             max_seq_len_source=max_seq_len_source,
             max_seq_len_target=max_seq_len_target,
+            dummy_info=args.dummy_info,
+            dummy_type=args.dummy_type,
+            dummy_size=args.dummy_size,
             conv_config=config_conv)
         encoder_num_hidden = encoder_transformer_model_size
     elif args.encoder == C.CONVOLUTION_TYPE:
@@ -463,6 +467,7 @@ def create_decoder_config(args: argparse.Namespace, encoder_num_hidden: int) -> 
         _, decoder_transformer_preprocess = args.transformer_preprocess
         _, decoder_transformer_postprocess = args.transformer_postprocess
         config_decoder = transformer.TransformerConfig(
+            batch_size=args.batch_size,
             model_size=args.transformer_model_size,
             attention_heads=args.transformer_attention_heads,
             feed_forward_num_hidden=args.transformer_feed_forward_num_hidden,
@@ -476,6 +481,9 @@ def create_decoder_config(args: argparse.Namespace, encoder_num_hidden: int) -> 
             postprocess_sequence=decoder_transformer_postprocess,
             max_seq_len_source=max_seq_len_source,
             max_seq_len_target=max_seq_len_target,
+            dummy_info=args.dummy_info,
+            dummy_type=args.dummy_type,
+            dummy_size=args.dummy_size,
             conv_config=None)
 
     elif args.decoder == C.CONVOLUTION_TYPE:
@@ -507,8 +515,7 @@ def create_decoder_config(args: argparse.Namespace, encoder_num_hidden: int) -> 
                                                          query_num_hidden=args.rnn_num_hidden,
                                                          layer_normalization=args.layer_normalization,
                                                          config_coverage=config_coverage,
-                                                         num_heads=args.rnn_attention_mhdot_heads,
-                                                         is_scaled=args.rnn_scale_dot_attention)
+                                                         num_heads=args.rnn_attention_mhdot_heads)
 
         _, decoder_rnn_dropout_inputs = args.rnn_dropout_inputs
         _, decoder_rnn_dropout_states = args.rnn_dropout_states
@@ -759,7 +766,7 @@ def main():
         # Dump the vocabularies if we're just starting up
         if not resume_training:
             vocab.save_source_vocabs(source_vocabs, output_folder)
-            vocab.save_target_vocab(target_vocab, output_folder)
+            vocab.vocab_to_json(target_vocab, os.path.join(output_folder, C.VOCAB_TRG_NAME))
 
         source_vocab_sizes = [len(v) for v in source_vocabs]
         target_vocab_size = len(target_vocab)
@@ -794,8 +801,7 @@ def main():
         trainer = training.EarlyStoppingTrainer(model=training_model,
                                                 optimizer_config=create_optimizer_config(args, source_vocab_sizes),
                                                 max_params_files_to_keep=args.keep_last_params,
-                                                source_vocabs=source_vocabs,
-                                                target_vocab=target_vocab)
+                                                log_to_tensorboard=args.use_tensorboard)
 
         trainer.fit(train_iter=train_iter,
                     validation_iter=eval_iter,
