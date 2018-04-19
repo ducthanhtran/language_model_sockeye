@@ -42,11 +42,9 @@ class LanguageModel(Decoder):
                         target_embed: mx.sym.Symbol,
                         target_embed_lengths: mx.sym.Symbol,
                         target_embed_max_length: int) -> mx.sym.Symbol:
-        # target_embed: target_embed_max_length * (batch_size, num_target_embed)
         target_embed = mx.sym.split(data=target_embed, num_outputs=target_embed_max_length, axis=1, squeeze_axis=True)
-        state = self.stacked_rnn.begin_state() # zero vector
+        state = self.get_initial_state()
 
-        # hidden_all: target_embed_max_length * (batch_size, rnn_num_hidden)
         hidden_states = []  # type: List[mx.sym.Symbol]
         self.reset()
         for seq_idx in range(target_embed_max_length):
@@ -64,6 +62,15 @@ class LanguageModel(Decoder):
                     target_embed_prev: mx.sym.Symbol,
                     source_encoded_max_length: int,
                     *states: mx.sym.Symbol) -> Tuple[mx.sym.Symbol, mx.sym.Symbol, List[mx.sym.Symbol]]:
+        prev_hidden, *layer_states = states
+
+        prev_state = RecurrentDecoderState(prev_hidden, list(layer_states))
+
+        # state.hidden: (batch_size, rnn_num_hidden)
+        state = self._step(target_embed_prev, prev_state)
+        return state.hidden, [state.hidden, state.layer_states]
+
+    def get_initial_state() -> RecurrentDecoderState:
         # TODO
 
     def reset(self):
@@ -75,16 +82,16 @@ class LanguageModel(Decoder):
                 cell.base_cell.reset()
             cell.reset()
 
-    def _step(self, prev_output_word: mx.sym.Symbol,
+    def _step(self, target_embed_prev: mx.sym.Symbol,
               state: RecurrentDecoderState,
               seq_idx: int = 0) -> RecurrentDecoderState:
         """
         Performs a single RNN step.
 
-        :param prev_output_word: previous output word as embedded vector
+        :param target_embed_prev: previous output word as embedded vector
         """
         # (1) label feedback from previous step is concatenated with hidden states
-        concatenated_input = mx.sym.concat(prev_output_word, state.hidden, dim=1,
+        concatenated_input = mx.sym.concat(target_embed_prev, state.hidden, dim=1,
                                   name="%sconcat_lm_label_feedback_hidden_state_%d" % (self.prefix, seq_idx))
 
         # (2) unroll stacked RNN for one timestep
