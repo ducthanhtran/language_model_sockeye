@@ -35,6 +35,7 @@ class LanguageModel(Decoder):
 
         # use Sockeye's internal stacked RNN computation graph
         self.stacked_rnn = get_stacked_rnn(config=self.rnn_config, prefix=self.prefix)
+        self.stacked_rnn_state_number = len(self.stacked_rnn.state_shape)
 
     def reset(self):
         self.stacked_rnn.reset()
@@ -61,6 +62,6 @@ class LanguageModel(Decoder):
         # rnn_output: (batch_size, rnn_num_hidden)
         # rnn_states: num_layers * [batch_size, rnn_num_hidden]
         rnn_output, rnn_states = \
-            self.stacked_rnn(concatenated_input, state.layer_states[:self.rnn_pre_attention_n_states])
+            self.stacked_rnn(concatenated_input, state.layer_states[:self.stacked_rnn_state_number])
 
-        return RecurrentDecoderState(hidden, rnn_states)
+        return RecurrentDecoderState(rnn_output, rnn_states)
