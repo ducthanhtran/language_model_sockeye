@@ -37,6 +37,16 @@ class LanguageModel(Decoder):
         self.stacked_rnn = get_stacked_rnn(config=self.rnn_config, prefix=self.prefix)
         self.stacked_rnn_state_number = len(self.stacked_rnn.state_shape)
 
+    def decode_step(self,
+                    step: int,
+                    target_embed_prev: mx.sym.Symbol,
+                    source_encoded_max_length: int,
+                    *states: mx.sym.Symbol) -> Tuple[mx.sym.Symbol, mx.sym.Symbol, List[mx.sym.Symbol]]:
+        # TODO
+
+    def get_initial_state(self):
+        # TODO - zero vector of suitable dimensions
+
     def reset(self):
         self.stacked_rnn.reset()
         cells_to_reset = list(self.stacked_rnn._cells) # Shallow copy of cells
