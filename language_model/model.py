@@ -39,18 +39,12 @@ class LanguageModel(Decoder):
 
 
     def decode_sequence(self,
-                        source_encoded: mx.sym.Symbol,
-                        source_encoded_lengths: mx.sym.Symbol,
-                        source_encoded_max_length: int,
                         target_embed: mx.sym.Symbol,
                         target_embed_lengths: mx.sym.Symbol,
                         target_embed_max_length: int) -> mx.sym.Symbol:
-        # NOTE: incomplete
-        # target_embed: target_seq_len * (batch_size, num_target_embed)
+        # target_embed: target_embed_max_length * (batch_size, num_target_embed)
         target_embed = mx.sym.split(data=target_embed, num_outputs=target_embed_max_length, axis=1, squeeze_axis=True)
-
-        zero_initial_state =
-        state = self.get_initial_state(source_encoded, source_encoded_lengths)
+        state = self.stacked_rnn.begin_state() # zero vector
 
         # hidden_all: target_embed_max_length * (batch_size, rnn_num_hidden)
         hidden_states = []  # type: List[mx.sym.Symbol]
@@ -71,9 +65,6 @@ class LanguageModel(Decoder):
                     source_encoded_max_length: int,
                     *states: mx.sym.Symbol) -> Tuple[mx.sym.Symbol, mx.sym.Symbol, List[mx.sym.Symbol]]:
         # TODO
-
-    def get_initial_state(self):
-        # TODO - zero vector of suitable dimensions
 
     def reset(self):
         self.stacked_rnn.reset()
