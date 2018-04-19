@@ -37,6 +37,34 @@ class LanguageModel(Decoder):
         self.stacked_rnn = get_stacked_rnn(config=self.rnn_config, prefix=self.prefix)
         self.stacked_rnn_state_number = len(self.stacked_rnn.state_shape)
 
+
+    def decode_sequence(self,
+                        source_encoded: mx.sym.Symbol,
+                        source_encoded_lengths: mx.sym.Symbol,
+                        source_encoded_max_length: int,
+                        target_embed: mx.sym.Symbol,
+                        target_embed_lengths: mx.sym.Symbol,
+                        target_embed_max_length: int) -> mx.sym.Symbol:
+        # NOTE: incomplete
+        # target_embed: target_seq_len * (batch_size, num_target_embed)
+        target_embed = mx.sym.split(data=target_embed, num_outputs=target_embed_max_length, axis=1, squeeze_axis=True)
+
+        zero_initial_state =
+        state = self.get_initial_state(source_encoded, source_encoded_lengths)
+
+        # hidden_all: target_embed_max_length * (batch_size, rnn_num_hidden)
+        hidden_states = []  # type: List[mx.sym.Symbol]
+        self.reset()
+        for seq_idx in range(target_embed_max_length):
+            # hidden: (batch_size, rnn_num_hidden)
+            state = self._step(target_embed[seq_idx],
+                               state,
+                               seq_idx)
+            hidden_states.append(state.hidden)
+
+        # concatenate along time axis: (batch_size, target_embed_max_length, rnn_num_hidden)
+        return mx.sym.stack(*hidden_states, axis=1, name='%shidden_stack' % self.prefix)
+
     def decode_step(self,
                     step: int,
                     target_embed_prev: mx.sym.Symbol,
