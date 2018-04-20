@@ -83,7 +83,14 @@ class LanguageModelDecoder(Decoder):
         return state.hidden, [state.hidden, state.layer_states]
 
     def get_initial_state() -> RecurrentDecoderState:
-        # TODO
+        # For the moment we utilize zero vectors.
+        zeros = mx.sym.expand_dims(mx.sym.zeros_like(source_encoded_length), axis=1)
+        hidden = mx.sym.tile(data=zeros, reps=(1, self.num_hidden))
+
+        initial_layer_states = []
+        for state_idx, (_, init_num_hidden) in enumerate(sum([rnn.state_shape for rnn in self.get_rnn_cells()], [])):
+            init = mx.sym.tile(data=zeros, reps=(1, init_num_hidden))
+            initial_layer_states.append(init)
 
     def reset(self):
         self.stacked_rnn.reset()
