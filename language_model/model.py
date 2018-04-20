@@ -1,7 +1,7 @@
 from typing import NamedTuple
 from sockeye.config import Config
 from sockeye.rnn import RNNConfig, get_stacked_rnn
-from sockeye.decoder import Decoder, get_initial_state, get_decoder()
+from sockeye.decoder import Decoder, get_initial_state, get_decoder
 from sockeye.encoder import Embedding, EmbeddingConfig
 from sockeye.layers import OutputLayer
 from sockeye import constants as C
