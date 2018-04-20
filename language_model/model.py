@@ -94,6 +94,9 @@ class LanguageModelDecoder(Decoder):
                 cell.base_cell.reset()
             cell.reset()
 
+    def get_rnn_cells(self) -> List[mx.rnn.BaseRNNCell]:
+        return [self.stacked_rnn]
+
     def _step(self, target_embed_prev: mx.sym.Symbol,
               state: RecurrentDecoderState,
               seq_idx: int = 0) -> RecurrentDecoderState:
