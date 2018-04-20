@@ -6,6 +6,7 @@ from sockeye.encoder import Embedding, EmbeddingConfig
 from sockeye.layers import OutputLayer
 from sockeye import constants as C
 
+
 LANGUAGE_MODEL_PREFIX = "lm_"
 
 
@@ -31,6 +32,7 @@ RecurrentDecoderState = NamedTuple('RecurrentDecoderState', [
     ('hidden', mx.sym.Symbol),
     ('layer_states', List[mx.sym.Symbol]),
 ])
+
 
 class LanguageModelDecoder(Decoder):
 
@@ -211,7 +213,7 @@ class LanguageModel:
 
         :return: Tuple of parameter symbols.
         """
-p        w_embed = mx.sym.Variable(LANGUAGE_MODEL_PREFIX + "embed_weight",
+        w_embed = mx.sym.Variable(LANGUAGE_MODEL_PREFIX + "embed_weight",
                                   shape=(self.config.vocab_size, self.config.num_embed))
         w_out = mx.sym.Variable(LANGUAGE_MODEL_PREFIX + "output_weight",
                                 shape=(self.config.vocab_size, self.decoder.get_num_hidden()))
