@@ -18,7 +18,7 @@ class LanguageModelConfig(Config):
                  max_seq_len: int,
                  vocab_size: int,
                  num_embed: int,
-                 rnn_config: RNNConfig
+                 rnn_config: RNNConfig,
                  embed_config: EmbeddingConfig) -> None:
         super().__init__()
         self.max_seq_len = max_seq_len
