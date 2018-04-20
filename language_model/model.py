@@ -92,8 +92,13 @@ class LanguageModelDecoder(Decoder):
         for state_idx, (_, init_num_hidden) in enumerate(sum([rnn.state_shape for rnn in self.get_rnn_cells()], [])):
             init = mx.sym.tile(data=zeros, reps=(1, init_num_hidden))
             initial_layer_states.append(init)
-
         return RecurrentDecoderState(hidden, layer_states)
+
+    def init_states(self,
+                    target_embed_lengths: mx.sym.Symbol) -> List[mx.sym.Symbol]:
+        # Used in inference phase.
+        hidden, layer_states = self.get_initial_state(target_embed_lengths)
+        return [hidden] + layer_states
 
     def reset(self):
         self.stacked_rnn.reset()
