@@ -81,9 +81,11 @@ class LanguageModelDecoder(Decoder):
         state = self._step(target_embed_prev, prev_state)
         return state.hidden, [state.hidden, state.layer_states]
 
-    def get_initial_state() -> RecurrentDecoderState:
+    def get_initial_state(self,
+                          target_embed_lengths: mx.sym.Symbol) -> RecurrentDecoderState:
         # For the moment we utilize zero vectors.
-        zeros = mx.sym.expand_dims(mx.sym.zeros_like(source_encoded_length), axis=1)
+        # Infer batch size from target embed lengths.
+        zeros = mx.sym.expand_dims(mx.sym.zeros_like(target_embed_lengths), axis=1)
         hidden = mx.sym.tile(data=zeros, reps=(1, self.num_hidden))
 
         initial_layer_states = []
