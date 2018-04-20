@@ -72,7 +72,6 @@ class LanguageModelDecoder(Decoder):
     def decode_step(self,
                     step: int,
                     target_embed_prev: mx.sym.Symbol,
-                    source_encoded_max_length: int,
                     *states: mx.sym.Symbol) -> Tuple[mx.sym.Symbol, mx.sym.Symbol, List[mx.sym.Symbol]]:
         prev_hidden, *layer_states = states
 
@@ -91,6 +90,8 @@ class LanguageModelDecoder(Decoder):
         for state_idx, (_, init_num_hidden) in enumerate(sum([rnn.state_shape for rnn in self.get_rnn_cells()], [])):
             init = mx.sym.tile(data=zeros, reps=(1, init_num_hidden))
             initial_layer_states.append(init)
+
+        return RecurrentDecoderState(hidden, layer_states)
 
     def reset(self):
         self.stacked_rnn.reset()
