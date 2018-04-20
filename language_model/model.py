@@ -1,8 +1,10 @@
 from typing import NamedTuple
 from sockeye.config import Config
 from sockeye.rnn import RNNConfig, get_stacked_rnn
-from sockeye.decoder import Decoder, get_initial_state
-
+from sockeye.decoder import Decoder, get_initial_state, get_decoder()
+from sockeye.encoder import Embedding, EmbeddingConfig
+from sockeye.layers import OutputLayer
+from sockeye import constants as C
 
 LANGUAGE_MODEL_PREFIX = "lm_"
 
@@ -12,11 +14,17 @@ class LanguageModelConfig(Config):
     Defines the configuration for our stacked RNN language model.
     """
     def __init__(self,
-                 max_seq_len_target: int,
-                 rnn_config: RNNConfig) -> None:
+                 max_seq_len: int,
+                 vocab_size: int,
+                 num_embed: int,
+                 rnn_config: RNNConfig
+                 embed_config: EmbeddingConfig) -> None:
         super().__init__()
-        self.max_seq_len_target = max_seq_len_target
+        self.max_seq_len = max_seq_len
+        self.vocab_size = vocab_size
+        self.num_embed = num_embed
         self.rnn_config = rnn_config
+        self.embed_config = embed_config
 
 
 RecurrentDecoderState = NamedTuple('RecurrentDecoderState', [
@@ -24,7 +32,7 @@ RecurrentDecoderState = NamedTuple('RecurrentDecoderState', [
     ('layer_states', List[mx.sym.Symbol]),
 ])
 
-class LanguageModel(Decoder):
+class LanguageModelDecoder(Decoder):
 
     def __init__(self,
                  lm_config: LanguageModelConfig,
@@ -101,3 +109,119 @@ class LanguageModel(Decoder):
             self.stacked_rnn(concatenated_input, state.layer_states[:self.stacked_rnn_state_number])
 
         return RecurrentDecoderState(rnn_output, rnn_states)
+
+
+class LanguageModel:
+    """
+    LanguageModel shares components needed for both training and inference.
+    The main components of a LanguageModel are
+    1) Embedding
+    2) Decoder
+    3) Output layer
+
+    LanguageModel conatins parameters and their values that are fixed at training time and must be re-used at inference time.
+
+    :param config: Model configuration.
+    """
+
+    def __init__(self, config: LanguageModelConfig) -> None:
+        self.config = copy.deepcopy(config)
+        self.config.freeze()
+        logger.info("%s", self.config)
+
+        # decoder first (to know the decoder depth)
+        self.decoder = LanguageModelDecoder(config=self.config,
+                                            prefix=LANGUAGE_MODEL_PREFIX + "decoder_")
+
+        # embedding
+        embed_weight, out_weight = self._get_embed_weights()
+        self.embedding = Embedding(self.config.embed_config,
+                                   prefix=LANGUAGE_MODEL_PREFIX + "embed_",
+                                   embed_weight=embed_weight)
+
+        # output layer
+        self.output_layer = OutputLayer(hidden_size=self.decoder.get_num_hidden(),
+                                        vocab_size=self.config.vocab_size,
+                                        weight=out_weight,
+                                        weight_normalization=False)
+
+        self.params = None  # type: Optional[Dict]
+        self.aux_params = None  # type: Optional[Dict]
+
+    def save_config(self, folder: str):
+        """
+        Saves model configuration to <folder>/config
+
+        :param folder: Destination folder.
+        """
+        fname = os.path.join(folder, LANGUAGE_MODEL_PREFIX + C.CONFIG_NAME)
+        self.config.save(fname)
+        logger.info('Saved config to "%s"', fname)
+
+    @staticmethod
+    def load_config(fname: str) -> LanguageModelConfig:
+        """
+        Loads model configuration.
+
+        :param fname: Path to load model configuration from.
+        :return: Model configuration.
+        """
+        config = LanguageModelConfig.load(fname)
+        logger.info('ModelConfig loaded from "%s"', fname)
+        return cast(LanguageModelConfig, config)  # type: ignore
+
+    def save_params_to_file(self, fname: str):
+        """
+        Saves model parameters to file.
+
+        :param fname: Path to save parameters to.
+        """
+        if self.aux_params is not None:
+            utils.save_params(self.params.copy(), fname, self.aux_params.copy())
+        else:
+            utils.save_params(self.params.copy(), fname)
+        logging.info('Saved LM params to "%s"', fname)
+
+    def load_params_from_file(self, fname: str):
+        """
+        Loads and sets model parameters from file.
+
+        :param fname: Path to load parameters from.
+        """
+        utils.check_condition(os.path.exists(fname), "No LM parameter file found under %s. "
+                                                     "This is either not a model directory or the first training "
+                                                     "checkpoint has not happened yet." % fname)
+        self.params, self.aux_params = utils.load_params(fname)
+        logger.info('Loaded LM params from "%s"', fname)
+
+    @staticmethod
+    def save_version(folder: str):
+        """
+        Saves version to <folder>/version.
+
+        :param folder: Destination folder.
+        """
+        fname = os.path.join(folder, LANGUAGE_MODEL_PREFIX + C.VERSION_NAME)
+        with open(fname, "w") as out:
+            out.write(__version__)
+
+    def _get_embed_weights(self) -> Tuple[mx.sym.Symbol, mx.sym.Symbol]:
+        """
+        Returns embedding parameters.
+
+        :return: Tuple of parameter symbols.
+        """
+p        w_embed = mx.sym.Variable(LANGUAGE_MODEL_PREFIX + "embed_weight",
+                                  shape=(self.config.vocab_size, self.config.num_embed))
+        w_out = mx.sym.Variable(LANGUAGE_MODEL_PREFIX + "output_weight",
+                                shape=(self.config.vocab_size, self.decoder.get_num_hidden()))
+
+        if self.config.weight_tying:
+            logger.info("Tying the LM embeddings and output layer parameters.")
+            utils.check_condition(self.config.num_embed == self.decoder.get_num_hidden(),
+                                  "Weight tying requires LM embedding size and LM decoder hidden size " +
+                                  "to be equal: %d vs. %d" % (self.config.num_embed,
+                                                              self.decoder.get_num_hidden()))
+            w_out = w_embed
+
+        return w_embed, w_out
