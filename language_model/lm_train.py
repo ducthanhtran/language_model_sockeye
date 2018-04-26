@@ -54,7 +54,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
 
 
     # TODO: option arguments/constants should be well-structured
-    train_data_error_msg = "Specify a LM training corpus with %s." % ("train-data")
+    train_data_error_msg = "Specify a LM training corpus with training data"
 
     utils.check_condition(args.train_data is None,
                           train_data_error_msg)

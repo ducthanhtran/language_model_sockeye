@@ -39,7 +39,7 @@ class LanguageModelDataStatistics(config.Config):
             describe_data_and_buckets(self, bucket_batch_sizes)
 
 
-def describe_data_and_buckets(data_statistics: LanguageModelDataStatistics, bucket_batch_sizes: List[BucketBatchSize]):
+def lm_describe_data_and_buckets(data_statistics: LanguageModelDataStatistics, bucket_batch_sizes: List[BucketBatchSize]):
     check_condition(len(bucket_batch_sizes) == len(data_statistics.buckets),
                     "[LM] Number of bucket batch sizes (%d) does not match number of buckets in statistics (%d)."
                     % (len(bucket_batch_sizes), len(data_statistics.buckets)))
@@ -79,7 +79,7 @@ class LanguageModelDataConfig(config.Config):
         self.data_statistics = data_statistics
         self.max_seq_len = max_seq_len
 
-def get_validation_data_iter(data_loader: RawParallelDatasetLoader,
+def lm_get_validation_data_iter(data_loader: RawParallelDatasetLoader,
                              validation_data: str,
                              buckets: List[Tuple[int, int]],
                              bucket_batch_sizes: List[BucketBatchSize],
@@ -119,7 +119,7 @@ def get_validation_data_iter(data_loader: RawParallelDatasetLoader,
                               bucket_batch_sizes=bucket_batch_sizes,
                               num_factors=1)
 
-def get_training_data_iters(train_data: str,
+def lm_get_training_data_iters(train_data: str,
                             validation_data: str,
                             vocab: vocab.Vocab,
                             vocab_path: Optional[str],
