@@ -7,7 +7,7 @@ from . import lm_common
 from . import lm_data_io
 from . import lm_model.TrainingLanguageModel
 from sockeye import config
-from sockeye import constants as C
+from sockeye.constants import BATCH_TYPE_WORD
 from sockeye.vocab import vocab_from_json, load_or_create_vocab
 from sockeye.utils import check_condition
 
@@ -51,7 +51,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
     num_words = args.num_words
     word_min_count = args.word_min_count
     batch_num_devices = 1 if args.use_cpu else sum(-di if di < 0 else 1 for di in args.device_ids)
-    batch_by_words = args.batch_type == C.BATCH_TYPE_WORD
+    batch_by_words = args.batch_type == BATCH_TYPE_WORD
 
 
     # TODO: option arguments/constants should be well-structured
