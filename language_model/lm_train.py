@@ -38,7 +38,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
                                  output_folder: str) -> Tuple['data_io.BaseParallelSampleIter',
                                                               'data_io.BaseParallelSampleIter',
                                                               'data_io.DataConfig',
-                                                              List[vocab.Vocab], vocab.Vocab]:
+                                                              vocab.Vocab]:
     """
     Create the data iterators and the vocabulary.
 
@@ -99,4 +99,12 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
 
 if __name__ == '__main__':
     args = create_parser().parse_args()
+
+    with ExitStack() as exit_stack:
+        context = determine_context(args, exit_stack)
+
+        train_iter, eval_iter, config_data, data_vocabs = create_data_iters_and_vocabs(
+            args=args,
+            shared_vocab=use
+        )
     # TODO: perform training on lm_model.TrainingLanguageModel
