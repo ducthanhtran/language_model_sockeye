@@ -64,7 +64,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
 
         # Recover the vocabulary path from the data info file:
         data_info = cast(lm_data_io.LanguageModelDataInfo,
-                         Config.load(os.path.join(output_folder, lm_common.LM_PREFIX + "data.info")))
+                         Config.load(os.path.join(output_folder, lm_common.LM_DATA_INFO)))
         vocab_path = data_info.vocab
 
     else:
