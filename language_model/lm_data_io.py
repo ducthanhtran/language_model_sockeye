@@ -2,7 +2,7 @@ import logging
 
 from sockeye import config
 from sockeye import constants as C
-from sockeye.data_io import BaseParallelSampleIter, define_parallel_buckets, get_data_statistics, define_bucket_batch_sizes
+from sockeye.data_io import BaseParallelSampleIter, define_parallel_buckets, get_data_statistics, define_bucket_batch_sizes, BucketBatchSize
 from sockeye import vocab
 
 class LanguageModelDataStatistics(config.Config):
@@ -29,14 +29,29 @@ class LanguageModelDataStatistics(config.Config):
         self.average_len_per_bucket = mean_len_per_bucket
 
     def log(self, bucket_batch_sizes: Optional[List[BucketBatchSize]] = None):
-        logger.info("Tokens: %d", self.num_tokens)
+        logger.info("[LM] Tokens: %d", self.num_tokens)
         if self.num_tokens > 0:
-            logger.info("Vocabulary coverage: %.0f%%",
+            logger.info("[LM] Vocabulary coverage: %.0f%%",
                         (1 - self.num_unks / self.num_tokens) * 100)
-        logger.info("%d sequences across %d buckets", self.num_sents, len(self.num_sents_per_bucket))
-        logger.info("%d sequences did not fit into buckets and were discarded", self.num_discarded)
+        logger.info("[LM] %d sequences across %d buckets", self.num_sents, len(self.num_sents_per_bucket))
+        logger.info("[LM] %d sequences did not fit into buckets and were discarded", self.num_discarded)
         if bucket_batch_sizes is not None:
             describe_data_and_buckets(self, bucket_batch_sizes)
+
+
+def describe_data_and_buckets(data_statistics: LanguageModelDataStatistics, bucket_batch_sizes: List[BucketBatchSize]):
+    check_condition(len(bucket_batch_sizes) == len(data_statistics.buckets),
+                    "[LM] Number of bucket batch sizes (%d) does not match number of buckets in statistics (%d)."
+                    % (len(bucket_batch_sizes), len(data_statistics.buckets)))
+    for bucket_batch_size, num_seq in zip(bucket_batch_sizes, data_statistics.num_sents_per_bucket):
+        if num_seq > 0:
+            logger.info("[LM] Bucket %s: %d samples in %d batches of %d, ~%.1f tokens/batch.",
+                        bucket_batch_size.bucket,
+                        num_seq,
+                        math.ceil(num_seq / bucket_batch_size.batch_size),
+                        bucket_batch_size.batch_size,
+                        bucket_batch_size.average_words_per_batch)
+
 
 class LanguageModelDataInfo(config.Config):
     """
