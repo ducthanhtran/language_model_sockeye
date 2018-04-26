@@ -1,5 +1,6 @@
 import argparse
 import os
+from typing import cast, List, Tuple
 
 
 from . import lm_common
@@ -56,8 +57,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
     # TODO: option arguments/constants should be well-structured
     train_data_error_msg = "Specify a LM training corpus with training and development data."
 
-    utils.check_condition(args.train_data is None and args.dev_data is None,
-                          train_data_error_msg)
+    utils.check_condition(args.train_data is None and args.dev_data is None, train_data_error_msg)
 
     if resume_training:
         # Load the existing vocabs created when starting the training run.
