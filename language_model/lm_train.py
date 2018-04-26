@@ -8,7 +8,7 @@ from . import lm_model.TrainingLanguageModel
 from sockeye import config
 from sockeye import constants as C
 from sockeye import vocab
-from sockeye import utils
+from sockeye.utils import check_condition
 
 # from Sockeye.arguments
 def regular_file() -> Callable:
@@ -54,9 +54,9 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
 
 
     # TODO: option arguments/constants should be well-structured
-    train_data_error_msg = "Specify a LM training corpus with training data"
+    train_data_error_msg = "Specify a LM training corpus with training and development data."
 
-    utils.check_condition(args.train_data is None,
+    utils.check_condition(args.train_data is None and args.dev_data is None,
                           train_data_error_msg)
 
     if resume_training:
