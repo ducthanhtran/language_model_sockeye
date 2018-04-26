@@ -1,3 +1,7 @@
+import argparse
+import os
+
+
 from . import lm_common
 from . import lm_data_io
 from . import lm_model.TrainingLanguageModel
@@ -5,11 +9,27 @@ from sockeye import config
 from sockeye import constants as C
 from sockeye import vocab
 from sockeye import utils
-import argparse
+
+# from Sockeye.arguments
+def regular_file() -> Callable:
+    def check_regular_file(value_to_check):
+        value_to_check = str(value_to_check)
+        if not os.path.isfile(value_to_check):
+            raise argparse.ArgumentTypeError("must exist and be a regular file.")
+        return value_to_check
+    return check_regular_file
+
 
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    # TODO: add parameters
+    parser.add_argument('--train-data',
+                        required=True,
+                        type=regular_file(),
+                        help='training data. Target labels are generated')
+    parser.add_argument('--dev-data',
+                        required=True,
+                        type=regular_file(),
+                        help='development data - used for early stopping')
     return parser
 
 def create_data_iters_and_vocabs(args: argparse.Namespace,
@@ -33,7 +53,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
     batch_by_words = args.batch_type == C.BATCH_TYPE_WORD
 
 
-    # TODO: option arguments/constants should be well-structured 
+    # TODO: option arguments/constants should be well-structured
     train_data_error_msg = "Specify a LM training corpus with %s." % ("train-data")
 
     utils.check_condition(args.train_data is None,
