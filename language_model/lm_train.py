@@ -10,8 +10,9 @@ from sockeye import config
 from sockeye.constants import BATCH_TYPE_WORD
 from sockeye.vocab import vocab_from_json, load_or_create_vocab
 from sockeye.utils import check_condition
+from sockeye.training import EarlyStoppingTrainer
 
-# from Sockeye.arguments
+# from sockeye.arguments
 def regular_file() -> Callable:
     def check_regular_file(value_to_check):
         value_to_check = str(value_to_check)
@@ -33,7 +34,9 @@ def create_parser() -> argparse.ArgumentParser:
                         help='development data - used for early stopping')
     return parser
 
-def create_data_iters_and_vocabs(args: argparse.Namespace,
+
+# from sockeye.train
+def lm_create_data_iters_and_vocabs(args: argparse.Namespace,
                                  resume_training: bool,
                                  output_folder: str) -> Tuple['data_io.BaseParallelSampleIter',
                                                               'data_io.BaseParallelSampleIter',
@@ -97,14 +100,97 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
     return train_iter, validation_iter, config_data, vocab
 
 
+# from sockeye.train
+def lm_create_model_config(args: argparse.Namespace,
+                        data_vocab_size: int,
+                        config_data: data_io.DataConfig) -> model.ModelConfig:
+    # TODO: has yet to be modified/checked upon
+    num_embed = args.num_embed
+    embed_dropout_source, embed_dropout_target = args.embed_dropout
+    source_vocab_size, *source_factor_vocab_sizes = source_vocab_sizes
+
+    check_encoder_decoder_args(args)
+
+    config_conv = None
+
+    config_encoder, encoder_num_hidden = create_encoder_config(args, config_conv)
+    config_decoder = create_decoder_config(args, encoder_num_hidden)
+
+    source_factor_configs = None
+    if len(source_vocab_sizes) > 1:
+        source_factor_configs = [encoder.FactorConfig(size, dim) for size, dim in zip(source_factor_vocab_sizes,
+                                                                                      args.source_factors_num_embed)]
+
+    config_embed_source = encoder.EmbeddingConfig(vocab_size=source_vocab_size,
+                                                  num_embed=num_embed_source,
+                                                  dropout=embed_dropout_source,
+                                                  factor_configs=source_factor_configs)
+
+    config_embed_target = encoder.EmbeddingConfig(vocab_size=target_vocab_size,
+                                                  num_embed=num_embed_target,
+                                                  dropout=embed_dropout_target)
+
+    config_loss = loss.LossConfig(name=args.loss,
+                                  vocab_size=target_vocab_size,
+                                  normalization_type=args.loss_normalization_type,
+                                  label_smoothing=args.label_smoothing)
+
+    model_config = model.ModelConfig(config_data=config_data,
+                                     vocab_source_size=source_vocab_size,
+                                     vocab_target_size=target_vocab_size,
+                                     config_embed_source=config_embed_source,
+                                     config_embed_target=config_embed_target,
+                                     config_encoder=config_encoder,
+                                     config_decoder=config_decoder,
+                                     config_loss=config_loss,
+                                     weight_tying=args.weight_tying,
+                                     weight_tying_type=args.weight_tying_type if args.weight_tying else None,
+                                     weight_normalization=args.weight_normalization)
+    return model_config
+
+
+def lm_create_training_model():
+    # TODO: implementation
+    # TODO: check consistency with TrainingModel class (sockeye)
+    pass
+
+
 if __name__ == '__main__':
     args = create_parser().parse_args()
+
+    output_folder = os.path.abspath(args.output)
+    resume_training = check_resume(args, output_folder)
 
     with ExitStack() as exit_stack:
         context = determine_context(args, exit_stack)
 
-        train_iter, eval_iter, config_data, data_vocabs = create_data_iters_and_vocabs(
-            args=args,
-            shared_vocab=use
-        )
-    # TODO: perform training on lm_model.TrainingLanguageModel
+        train_iter, eval_iter, config_data, data_vocabs =
+            lm_create_data_iters_and_vocabs(args=args,
+                                            resume_training=resume_training,
+                                            output_folder=output_folder)
+
+        data_vocab_size = len(data_vocabs)
+        logger.info('[LM] Vocabulary size: %s', data_vocab_size)
+
+        lm_model_config = lm_create_model_config(args, data_vocab_size, config_data)
+        lm_model_config.freeze()
+
+        lm_training_model = lm_create_training_model(config=lm_model_config,
+                                 context=context,
+                                 output_dir=output_folder,
+                                 train_iter=train_iter,
+                                 args=args)
+
+        lm_trainer = sockeye.training.EarlyStoppingTrainer(model=lm_training_model,
+                                              optimizer_config=create_optimizer_config(args,ddata_vocab_size),
+                                              max_params_files_to_keep=args.keep_last_params)
+        lm_trainer.fit(train_iter=train_iter,
+                       validation_iter=eval_iter,
+                       early_stopping_metric=args.optimized_metric,
+                       metrics=args.metrics,
+                       checkpoint_frequency=args.checkpoint_frequency,
+                       max_num_not_improved=max_num_checkpoint_not_improved,
+                       lr_decay_param_reset=args.learning_rate_decay_param_reset,
+                       lr_decay_opt_states_reset=args.learning_rate_decay_param_reset,
+                       decoder=create_checkpoint_decoder(args, exit_stack, context),
+                       existing_parameters=args.params)
