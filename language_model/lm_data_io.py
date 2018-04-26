@@ -1,6 +1,6 @@
 from sockeye import config
 from sockeye import constants as C
-from sockeye.data_io import define_parallel_buckets, get_data_statistics, define_bucket_batch_sizes
+from sockeye.data_io import BaseParallelSampleIter, define_parallel_buckets, get_data_statistics, define_bucket_batch_sizes
 from sockeye import vocab
 
 class LanguageModelDataStatistics(config.Config):
