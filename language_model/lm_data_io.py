@@ -73,7 +73,7 @@ class LanguageModelDataConfig(config.Config):
     """
 
     def __init__(self,
-                 data_statistics: DataStatistics,
+                 data_statistics: LanguageModelDataStatistics,
                  max_seq_len: int) -> None:
         super().__init__()
         self.data_statistics = data_statistics
@@ -91,7 +91,7 @@ def get_validation_data_iter(data_loader: RawParallelDatasetLoader,
     Returns a ParallelSampleIter for the validation data.
     """
     logger.info("=================================")
-    logger.info("Creating validation data iterator")
+    logger.info("[LM] Creating validation data iterator")
     logger.info("=================================")
 
     length_ratio_mean = 1
