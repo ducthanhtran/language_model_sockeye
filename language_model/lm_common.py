@@ -3,7 +3,11 @@ from sockeye.rnn import RNNConfig
 from sockeye.encoder import EmbeddingConfig
 from sockeye.loss import LossConfig
 
-LANGUAGE_MODEL_PREFIX = "lm_"
+
+JSON_SUFFIX = ".json"
+LM_PREFIX = "lm_"
+LM_VOCAB_NAME = "vocab.lm" + JSON_SUFFIX
+
 
 class LanguageModelConfig(Config):
     """

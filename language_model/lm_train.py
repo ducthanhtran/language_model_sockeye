@@ -8,7 +8,7 @@ from . import lm_data_io
 from . import lm_model.TrainingLanguageModel
 from sockeye import config
 from sockeye import constants as C
-from sockeye import vocab
+from sockeye.vocab import vocab_from_json
 from sockeye.utils import check_condition
 
 # from Sockeye.arguments
@@ -56,16 +56,15 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
 
     # TODO: option arguments/constants should be well-structured
     train_data_error_msg = "Specify a LM training corpus with training and development data."
-
-    utils.check_condition(args.train_data is None and args.dev_data is None, train_data_error_msg)
+    check_condition(args.train_data is None and args.dev_data is None, train_data_error_msg)
 
     if resume_training:
         # Load the existing vocabs created when starting the training run.
-        lm_vocab = vocab.vocab_from_json(os.path.join(output_folder, lm_common.LANGUAGE_MODEL_PREFIX + "vocab.lm" + JSON_SUFFIX))
+        lm_vocab = vocab_from_json(os.path.join(output_folder, lm_common.LM_PREFIX + lm_common.VOCAB_NAME))
 
         # Recover the vocabulary path from the data info file:
         data_info = cast(lm_data_io.LanguageModelDataInfo,
-                         Config.load(os.path.join(output_folder, lm_common.LANGUAGE_MODEL_PREFIX + "data.info")))
+                         Config.load(os.path.join(output_folder, lm_common.LM_PREFIX + "data.info")))
         vocab_path = data_info.vocab
 
     else:
@@ -91,7 +90,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
         bucketing=not args.no_bucketing,
         bucket_width=args.bucket_width)
 
-    data_info_fname = os.path.join(output_folder, lm_common.LANGUAGE_MODEL_PREFIX + "data.info")
+    data_info_fname = os.path.join(output_folder, lm_common.LM_PREFIX + "data.info")
     logger.info("Writing LM data config to '%s'", data_info_fname)
     data_info.save(data_info_fname)
 

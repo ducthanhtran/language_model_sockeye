@@ -16,7 +16,7 @@ class LanguageModelDecoder(Decoder):
 
     def __init__(self,
                  lm_config: lm_common.LanguageModelConfig,
-                 prefix: str = lm_common.LANGUAGE_MODEL_PREFIX) -> None:
+                 prefix: str = lm_common.LM_PREFIX) -> None:
         self.lm_config = lm_config
         self.rnn_config = self.lm_config.rnn_config
         self.prefix = prefix

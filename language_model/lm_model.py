@@ -28,12 +28,12 @@ class LanguageModel:
 
         # decoder first (to know the decoder depth)
         self.decoder = LanguageModelDecoder(config=self.config,
-                                            prefix=LANGUAGE_MODEL_PREFIX + "decoder_")
+                                            prefix=LM_PREFIX + "decoder_")
 
         # embedding
         embed_weight, out_weight = self._get_embed_weights()
         self.embedding = Embedding(self.config.config_embed,
-                                   prefix=LANGUAGE_MODEL_PREFIX + "embed_",
+                                   prefix=LM_PREFIX + "embed_",
                                    embed_weight=embed_weight)
 
         # output layer
@@ -51,7 +51,7 @@ class LanguageModel:
 
         :param folder: Destination folder.
         """
-        fname = os.path.join(folder, LANGUAGE_MODEL_PREFIX + C.CONFIG_NAME)
+        fname = os.path.join(folder, LM_PREFIX + C.CONFIG_NAME)
         self.config.save(fname)
         logger.info('Saved config to "%s"', fname)
 
@@ -98,7 +98,7 @@ class LanguageModel:
 
         :param folder: Destination folder.
         """
-        fname = os.path.join(folder, LANGUAGE_MODEL_PREFIX + C.VERSION_NAME)
+        fname = os.path.join(folder, LM_PREFIX + C.VERSION_NAME)
         with open(fname, "w") as out:
             out.write(__version__)
 
@@ -108,9 +108,9 @@ class LanguageModel:
 
         :return: Tuple of parameter symbols.
         """
-        w_embed = mx.sym.Variable(LANGUAGE_MODEL_PREFIX + "embed_weight",
+        w_embed = mx.sym.Variable(LM_PREFIX + "embed_weight",
                                   shape=(self.config.vocab_size, self.config.num_embed))
-        w_out = mx.sym.Variable(LANGUAGE_MODEL_PREFIX + "output_weight",
+        w_out = mx.sym.Variable(LM_PREFIX + "output_weight",
                                 shape=(self.config.vocab_size, self.decoder.get_num_hidden()))
 
         if self.config.weight_tying:
@@ -165,19 +165,19 @@ class TrainingLanguageModel(lm_model.LanguageModel):
         """
         Initializes model components, creates training symbol and module, and binds it.
         """
-        input = mx.sym.Variable(lm_common.LANGUAGE_MODEL_PREFIX + "input")
+        input = mx.sym.Variable(lm_common.LM_PREFIX + "input")
         input_words = input.split(num_outputs=self.config.config_embed.num_factors,
                                   axis=2, squeeze_axis=True)[0]
         input_length = utils.compute_lengths(input_words)
-        output = mx.sym.Variable(lm_common.LANGUAGE_MODEL_PREFIX + "output")
+        output = mx.sym.Variable(lm_common.LM_PREFIX + "output")
         output_length = utils.compute_lengths(output)
-        labels = mx.sym.reshape(data=mx.sym.Variable(lm_common.LANGUAGE_MODEL_PREFIX + "label"),
+        labels = mx.sym.reshape(data=mx.sym.Variable(lm_common.LM_PREFIX + "label"),
                                 shape=(-1,))
 
         self.model_loss = loss.get_loss(self.config.config_loss)
 
-        data_names = [lm_common.LANGUAGE_MODEL_PREFIX + "input", lm_common.LANGUAGE_MODEL_PREFIX + "output"]
-        label_names = [lm_common.LANGUAGE_MODEL_PREFIX + "label"]
+        data_names = [lm_common.LM_PREFIX + "input", lm_common.LM_PREFIX + "output"]
+        label_names = [lm_common.LM_PREFIX + "label"]
 
         # check provide_{data,label} names
         provide_data_names = [d[0] for d in provide_data]
