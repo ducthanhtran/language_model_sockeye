@@ -1,9 +1,13 @@
-from . import lm_common
+import sys
+import mxnet as mx
 from typing import NamedTuple
+
+from . import lm_common
+
+sys.path.append('../')
+
 from sockeye.decoder import Decoder
 from sockeye.rnn import get_stacked_rnn
-
-import mxnet as mx
 
 
 RecurrentDecoderState = NamedTuple('RecurrentDecoderState', [

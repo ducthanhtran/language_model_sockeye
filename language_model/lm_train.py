@@ -1,11 +1,14 @@
 import argparse
 import os
+import sys
 from typing import cast, List, Tuple
-
 
 from . import lm_common
 from . import lm_data_io
 from . import lm_model.TrainingLanguageModel
+
+sys.path.append('../')
+
 from sockeye import config
 from sockeye.constants import BATCH_TYPE_WORD
 from sockeye.vocab import vocab_from_json, load_or_create_vocab

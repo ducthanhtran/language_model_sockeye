@@ -1,4 +1,7 @@
 import logging
+import sys
+
+sys.path.append('../')
 
 from sockeye import config
 from sockeye import constants as C

@@ -1,3 +1,8 @@
+import sys
+import mxnet as mx
+
+sys.path.append('../')
+
 from . import lm_common
 from . import lm_decoder
 from . import lm_model
@@ -5,7 +10,7 @@ from sockeye.encoder import Embedding
 from sockeye.layers import OutputLayer
 from sockeye import constants as C
 
-import mxnet as mx
+
 
 
 class LanguageModel:

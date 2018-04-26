@@ -1,3 +1,7 @@
+import sys
+
+sys.path.append('../')
+
 from sockeye.config import Config
 from sockeye.rnn import RNNConfig
 from sockeye.encoder import EmbeddingConfig
