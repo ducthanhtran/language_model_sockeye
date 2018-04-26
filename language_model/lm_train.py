@@ -8,7 +8,7 @@ from . import lm_data_io
 from . import lm_model.TrainingLanguageModel
 from sockeye import config
 from sockeye import constants as C
-from sockeye.vocab import vocab_from_json
+from sockeye.vocab import vocab_from_json, load_or_create_vocab
 from sockeye.utils import check_condition
 
 # from Sockeye.arguments
@@ -70,14 +70,14 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
     else:
         # Load or create vocabs
         vocab_path = args.vocab
-        vocab = vocab.load_or_create_vocab(
+        vocab = load_or_create_vocab(
             data=args.train_data,
             vocab_path=vocab_path,
             num_words=num_words,
             word_min_count=word_min_count)
 
     # No factors for train/validation data
-    train_iter, validation_iter, config_data, data_info = data_io.get_training_data_iters(
+    train_iter, validation_iter, config_data, data_info = lm_data_io.lm_get_training_data_iters(
         train_data=os.path.abspath(args.train_data),
         validation_data=os.path.abspath(args.validation_data),
         vocab=vocab,
@@ -90,7 +90,7 @@ def create_data_iters_and_vocabs(args: argparse.Namespace,
         bucketing=not args.no_bucketing,
         bucket_width=args.bucket_width)
 
-    data_info_fname = os.path.join(output_folder, lm_common.LM_PREFIX + "data.info")
+    data_info_fname = os.path.join(output_folder, lm_common.LM_DATA_INFO)
     logger.info("Writing LM data config to '%s'", data_info_fname)
     data_info.save(data_info_fname)
 

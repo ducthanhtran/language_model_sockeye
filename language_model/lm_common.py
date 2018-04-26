@@ -7,6 +7,7 @@ from sockeye.loss import LossConfig
 JSON_SUFFIX = ".json"
 LM_PREFIX = "lm_"
 LM_VOCAB_NAME = "vocab.lm" + JSON_SUFFIX
+LM_DATA_INFO = LM_PREFIX + "data.info"
 
 
 class LanguageModelConfig(Config):
