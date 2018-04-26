@@ -3,6 +3,7 @@ import os
 import sys
 from typing import cast, List, Tuple
 
+from . import lm_arguments
 from . import lm_common
 from . import lm_data_io
 from . import lm_model.TrainingLanguageModel
@@ -14,28 +15,6 @@ from sockeye.constants import BATCH_TYPE_WORD
 from sockeye.vocab import vocab_from_json, load_or_create_vocab
 from sockeye.utils import check_condition
 from sockeye.training import EarlyStoppingTrainer
-
-# from sockeye.arguments
-def regular_file() -> Callable:
-    def check_regular_file(value_to_check):
-        value_to_check = str(value_to_check)
-        if not os.path.isfile(value_to_check):
-            raise argparse.ArgumentTypeError("must exist and be a regular file.")
-        return value_to_check
-    return check_regular_file
-
-
-def create_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--train-data',
-                        required=True,
-                        type=regular_file(),
-                        help='training data. Target labels are generated')
-    parser.add_argument('--dev-data',
-                        required=True,
-                        type=regular_file(),
-                        help='development data - used for early stopping')
-    return parser
 
 
 # from sockeye.train
@@ -85,7 +64,7 @@ def lm_create_data_iters_and_vocabs(args: argparse.Namespace,
     # No factors for train/validation data
     train_iter, validation_iter, config_data, data_info = lm_data_io.lm_get_training_data_iters(
         train_data=os.path.abspath(args.train_data),
-        validation_data=os.path.abspath(args.validation_data),
+        validation_data=os.path.abspath(args.dev_data),
         vocab=vocab,
         vocab_path=vocab_path,
         batch_size=args.batch_size,
@@ -159,7 +138,7 @@ def lm_create_training_model():
 
 
 if __name__ == '__main__':
-    args = create_parser().parse_args()
+    args = lm_arguments.create_parser().parse_args()
 
     output_folder = os.path.abspath(args.output)
     resume_training = check_resume(args, output_folder)
@@ -194,6 +173,6 @@ if __name__ == '__main__':
                        checkpoint_frequency=args.checkpoint_frequency,
                        max_num_not_improved=max_num_checkpoint_not_improved,
                        lr_decay_param_reset=args.learning_rate_decay_param_reset,
-                       lr_decay_opt_states_reset=args.learning_rate_decay_param_reset,
+                       lr_decay_opt_states_reset=args.learning_rate_decay_optimizer_states_reset,
                        decoder=create_checkpoint_decoder(args, exit_stack, context),
                        existing_parameters=args.params)
