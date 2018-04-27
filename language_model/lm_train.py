@@ -18,7 +18,7 @@ from sockeye.vocab import vocab_from_json, load_or_create_vocab
 from sockeye.utils import check_condition
 from sockeye.training import EarlyStoppingTrainer
 
-pdb.stack_trace()
+pdb.set_trace()
 
 # from sockeye.train
 def lm_create_data_iters_and_vocabs(args: argparse.Namespace,
