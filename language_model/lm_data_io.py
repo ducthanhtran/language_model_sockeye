@@ -126,6 +126,7 @@ def lm_get_validation_data_iter(data_loader: data_io.RawParallelDatasetLoader,
                               bucket_batch_sizes=bucket_batch_sizes,
                               num_factors=1)
 
+
 def lm_get_training_data_iters(train_data: str,
                             validation_data: str,
                             vocab: vocab.Vocab,

@@ -82,6 +82,8 @@ def lm_create_data_iters_and_vocabs(args: argparse.Namespace,
         bucketing=not args.no_bucketing,
         bucket_width=args.bucket_width)
 
+    pdb.set_trace() # NOTE: BREAK HERE
+
     data_info_fname = os.path.join(output_folder, lm_common.LM_DATA_INFO)
     logger.info("[LM] Writing LM data config to '%s'", data_info_fname)
     data_info.save(data_info_fname)
