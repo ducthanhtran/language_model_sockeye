@@ -1,6 +1,7 @@
 import pdb # NOTE: debugging
 
 import argparse
+import logging
 import os
 import sys
 from contextlib import ExitStack
@@ -20,6 +21,8 @@ from sockeye.vocab import Vocab, vocab_from_json, load_or_create_vocab
 from sockeye.utils import check_condition
 from sockeye.train import check_resume, determine_context
 from sockeye.training import EarlyStoppingTrainer
+
+logger = logging.getLogger(__name__)
 
 
 # from sockeye.train
@@ -66,7 +69,6 @@ def lm_create_data_iters_and_vocabs(args: argparse.Namespace,
             num_words=num_words,
             word_min_count=word_min_count)
 
-    # No factors for train/validation data
     train_iter, validation_iter, config_data, data_info = lm_data_io.lm_get_training_data_iters(
         train_data=os.path.abspath(args.train_data),
         validation_data=os.path.abspath(args.dev_data),
@@ -81,7 +83,7 @@ def lm_create_data_iters_and_vocabs(args: argparse.Namespace,
         bucket_width=args.bucket_width)
 
     data_info_fname = os.path.join(output_folder, lm_common.LM_DATA_INFO)
-    logger.info("Writing LM data config to '%s'", data_info_fname)
+    logger.info("[LM] Writing LM data config to '%s'", data_info_fname)
     data_info.save(data_info_fname)
 
     return train_iter, validation_iter, config_data, vocab

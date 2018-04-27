@@ -206,9 +206,9 @@ def lm_get_training_data_iters(train_data: str,
                                     bucket_batch_sizes=bucket_batch_sizes,
                                     num_factors=1)
 
-    validation_sources = None
-    validation_target = None
-    source_vocabs = None
+    validation_sources = []
+    validation_target = ""
+    source_vocabs = {}
     max_seq_len_source = 0
 
     validation_iter = data_io.get_validation_data_iter(data_loader=data_loader,
