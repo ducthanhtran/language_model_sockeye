@@ -1,13 +1,16 @@
 import sys
 import mxnet as mx
+from typing import Any, Dict, List, Tuple, Union, Optional
 
 sys.path.append('../')
 
 from . import lm_common
 from . import lm_decoder
 from . import lm_model
+from sockeye.data_io import BaseParallelSampleIter
 from sockeye.encoder import Embedding
 from sockeye.layers import OutputLayer
+from sockeye.optimizers import SockeyeOptimizer, OptimizerConfig
 from sockeye import constants as C
 
 
@@ -298,7 +301,7 @@ class TrainingLanguageModel(lm_model.LanguageModel):
         """
         self.module.prepare(batch)
 
-    def evaluate(self, eval_iter: data_io.BaseParallelSampleIter, eval_metric: mx.metric.EvalMetric):
+    def evaluate(self, eval_iter: BaseParallelSampleIter, eval_metric: mx.metric.EvalMetric):
         """
         Resets and recomputes evaluation metric on given data iterator.
         """
