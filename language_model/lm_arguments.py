@@ -18,7 +18,7 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def add_params_data(parser: arparse.ArgumentParser) -> None:
+def add_params_data(parser: argparse.ArgumentParser) -> None:
     parser.add_argument('--train-data',
                         required=True,
                         type=sockeye.arguments.regular_file(),
