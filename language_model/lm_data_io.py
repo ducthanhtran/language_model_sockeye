@@ -43,21 +43,65 @@ class LanguageModelDataStatistics(config.Config):
         logger.info("[LM] %d sequences across %d buckets", self.num_sents, len(self.num_sents_per_bucket))
         logger.info("[LM] %d sequences did not fit into buckets and were discarded", self.num_discarded)
         if bucket_batch_sizes is not None:
-            describe_data_and_buckets(self, bucket_batch_sizes)
+            data_io.describe_data_and_buckets(self, bucket_batch_sizes)
 
 
-def lm_describe_data_and_buckets(data_statistics: LanguageModelDataStatistics, bucket_batch_sizes: List[data_io.BucketBatchSize]):
-    check_condition(len(bucket_batch_sizes) == len(data_statistics.buckets),
-                    "[LM] Number of bucket batch sizes (%d) does not match number of buckets in statistics (%d)."
-                    % (len(bucket_batch_sizes), len(data_statistics.buckets)))
-    for bucket_batch_size, num_seq in zip(bucket_batch_sizes, data_statistics.num_sents_per_bucket):
-        if num_seq > 0:
-            logger.info("[LM] Bucket %s: %d samples in %d batches of %d, ~%.1f tokens/batch.",
-                        bucket_batch_size.bucket,
-                        num_seq,
-                        math.ceil(num_seq / bucket_batch_size.batch_size),
-                        bucket_batch_size.batch_size,
-                        bucket_batch_size.average_words_per_batch)
+class LanguageModelDataStatisticsAccumulator:
+
+    def __init__(self,
+                 buckets: List[Tuple[int, int]],
+                 vocab_target: Dict[str, int],
+                 length_ratio_mean: float,
+                 length_ratio_std: float) -> None:
+        self.buckets = buckets
+        num_buckets = len(buckets)
+        self.length_ratio_mean = length_ratio_mean
+        self.length_ratio_std = length_ratio_std
+        self.unk_id_target = vocab_target[C.UNK_SYMBOL]
+        self.size_vocab_target = len(vocab_target)
+        self.num_sents = 0
+        self.num_discarded = 0
+        self.num_tokens_target = 0
+        self.num_unks_target = 0
+        self.max_observed_len_target = 0
+        self._mean_len_target_per_bucket = [OnlineMeanAndVariance() for _ in range(num_buckets)]
+
+    def sequence_pair(self,
+                      target: List[int],
+                      bucket_idx: Optional[int]):
+        if bucket_idx is None:
+            self.num_discarded += 1
+            return
+
+        target_len = len(target)
+
+        self._mean_len_target_per_bucket[bucket_idx].update(target_len)
+
+        self.num_sents += 1
+        self.num_tokens_target += target_len
+        self.max_observed_len_target = max(target_len, self.max_observed_len_target)
+
+        self.num_unks_target += target.count(self.unk_id_target)
+
+    @property
+    def mean_len_target_per_bucket(self) -> List[Optional[float]]:
+        return [mean_and_variance.mean if mean_and_variance.count > 0 else None
+                for mean_and_variance in self._mean_len_target_per_bucket]
+
+    @property
+    def statistics(self):
+        num_sents_per_bucket = [mean_and_variance.count for mean_and_variance in self._mean_len_target_per_bucket]
+        return LanguageModelDataStatistics(num_sents=self.num_sents,
+                                           num_discarded=self.num_discarded,
+                                           num_tokens_target=self.num_tokens_target,
+                                           num_unks_target=self.num_unks_target,
+                                           max_observed_len_target=self.max_observed_len_target,
+                                           size_vocab_target=self.size_vocab_target,
+                                           length_ratio_mean=self.length_ratio_mean,
+                                           length_ratio_std=self.length_ratio_std,
+                                           buckets=self.buckets,
+                                           num_sents_per_bucket=num_sents_per_bucket,
+                                           mean_len_target_per_bucket=self.mean_len_target_per_bucket)
 
 
 class LanguageModelDataInfo(config.Config):
@@ -128,18 +172,18 @@ def lm_get_validation_data_iter(data_loader: data_io.RawParallelDatasetLoader,
 
 
 def lm_get_training_data_iters(train_data: str,
-                            validation_data: str,
-                            vocab: vocab.Vocab,
-                            vocab_path: Optional[str],
-                            batch_size: int,
-                            batch_by_words: bool,
-                            batch_num_devices: int,
-                            fill_up: str,
-                            max_seq_len: int,
-                            bucketing: bool,
-                            bucket_width: int) -> Tuple['BaseParallelSampleIter',
-                                                        'BaseParallelSampleIter',
-                                                        'DataConfig', 'DataInfo']:
+                               validation_data: str,
+                               vocab: vocab.Vocab,
+                               vocab_path: Optional[str],
+                               batch_size: int,
+                               batch_by_words: bool,
+                               batch_num_devices: int,
+                               fill_up: str,
+                               max_seq_len: int,
+                               bucketing: bool,
+                               bucket_width: int) -> Tuple['BaseParallelSampleIter',
+                                                           'BaseParallelSampleIter',
+                                                           'DataConfig', 'DataInfo']:
     """
     Returns data iterators for training and validation data.
 
