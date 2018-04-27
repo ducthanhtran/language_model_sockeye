@@ -14,8 +14,6 @@ from sockeye.optimizers import SockeyeOptimizer, OptimizerConfig
 from sockeye import constants as C
 
 
-
-
 class LanguageModel:
     """
     LanguageModel shares components needed for both training and inference.
