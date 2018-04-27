@@ -4,7 +4,7 @@ import sys
 sys.path.append('../')
 
 import sockeye.constants as C
-from sockeye.arguments import regular_file, regular_folder, simple_dict, int_greater_or_equal, multiple_values, learning_schedule
+from sockeye.arguments import regular_file, regular_folder, simple_dict, int_greater_or_equal, learning_schedule
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -51,8 +51,8 @@ def add_params_bucketing(parser: argparse.ArgumentParser) -> None:
                         help='Width of buckets in tokens. Default: %(default)s.')
 
     bucketing_params.add_argument('--max-seq-len',
-                        type=multiple_values(num_values=2, greater_or_equal=1),
-                        default=(100, 100),
+                        type=int_greater_or_equal(1),
+                        default=100,
                         help='Maximum sequence length in tokens. Note that the target side will be extended by '
                              'the <BOS> (beginning of sentence) token, increasing the effective target length. '
                              'Use "x:x" to specify separate values for src&tgt. Default: %(default)s.')
@@ -90,13 +90,13 @@ def add_params_vocab(params):
                         default=None,
                         help='Existing source vocabulary (JSON).')
     params.add_argument('--num-words',
-                        type=multiple_values(num_values=2, greater_or_equal=0),
-                        default=(50000, 50000),
+                        type=int_greater_or_equal(0),
+                        default=50000,
                         help='Maximum vocabulary size. Use "x:x" to specify separate values for src&tgt. '
                              'Default: %(default)s.')
     params.add_argument('--word-min-count',
-                        type=multiple_values(num_values=2, greater_or_equal=1),
-                        default=(1, 1),
+                        type=int_greater_or_equal(1),
+                        default=1,
                         help='Minimum frequency of words to be included in vocabularies. Default: %(default)s.')
 
 
@@ -226,25 +226,24 @@ def add_params_training(params):
                                    'before fitting is stopped. Default: %(default)s.')
 
     train_params.add_argument('--embed-dropout',
-                              type=multiple_values(2, data_type=float),
-                              default=(.0, .0),
-                              help='Dropout probability for source & target embeddings. Use "x:x" to specify '
-                                   'separate values. Default: %(default)s.')
+                              type=float,
+                              default=.0,
+                              help='Dropout probability for source & target embeddings. Default: %(default)s.')
     train_params.add_argument('--rnn-dropout-inputs',
-                              type=multiple_values(2, data_type=float),
-                              default=(.0, .0),
-                              help='RNN variational dropout probability for encoder & decoder RNN inputs. (Gal, 2015)'
-                                   'Use "x:x" to specify separate values. Default: %(default)s.')
+                              type=float,
+                              default=.0,
+                              help='RNN variational dropout probability for language model decoder RNN inputs. '
+                                   '(Gal, 2015). Default: %(default)s.')
     train_params.add_argument('--rnn-dropout-states',
-                              type=multiple_values(2, data_type=float),
-                              default=(.0, .0),
-                              help='RNN variational dropout probability for encoder & decoder RNN states. (Gal, 2015)'
-                                   'Use "x:x" to specify separate values. Default: %(default)s.')
+                              type=float,
+                              default=.0,
+                              help='RNN variational dropout probability for decoder RNN states. (Gal, 2015). '
+                                   'Default: %(default)s.')
     train_params.add_argument('--rnn-dropout-recurrent',
-                              type=multiple_values(2, data_type=float),
-                              default=(.0, .0),
-                              help='Recurrent dropout without memory loss (Semeniuta, 2016) for encoder & decoder '
-                                   'LSTMs. Use "x:x" to specify separate values. Default: %(default)s.')
+                              type=float,
+                              default=.0,
+                              help='Recurrent dropout without memory loss (Semeniuta, 2016) for decoder '
+                                   'LSTMs. Default: %(default)s.')
 
     train_params.add_argument('--rnn-decoder-hidden-dropout',
                               type=float,
