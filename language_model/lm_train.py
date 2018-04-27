@@ -6,7 +6,7 @@ from typing import cast, List, Tuple
 from . import lm_arguments
 from . import lm_common
 from . import lm_data_io
-from . import lm_model.TrainingLanguageModel
+from . import lm_model
 
 sys.path.append('../')
 
@@ -146,10 +146,10 @@ if __name__ == '__main__':
     with ExitStack() as exit_stack:
         context = determine_context(args, exit_stack)
 
-        train_iter, eval_iter, config_data, data_vocabs =
-            lm_create_data_iters_and_vocabs(args=args,
-                                            resume_training=resume_training,
-                                            output_folder=output_folder)
+        train_iter, eval_iter, config_data, data_vocabs = lm_create_data_iters_and_vocabs(
+                                                                    args=args,
+                                                                    resume_training=resume_training,
+                                                                    output_folder=output_folder)
 
         data_vocab_size = len(data_vocabs)
         logger.info('[LM] Vocabulary size: %s', data_vocab_size)
