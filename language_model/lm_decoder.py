@@ -1,6 +1,6 @@
 import sys
 import mxnet as mx
-from typing import NamedTuple
+from typing import List, NamedTuple, Tuple
 
 from . import lm_common
 
