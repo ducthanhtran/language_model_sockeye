@@ -3,6 +3,7 @@ import pdb # NOTE: debugging
 import argparse
 import os
 import sys
+from contextlib import ExitStack
 from typing import cast, List, Tuple
 
 from . import lm_arguments
@@ -17,6 +18,7 @@ from sockeye.constants import BATCH_TYPE_WORD
 from sockeye.data_io import DataConfig
 from sockeye.vocab import Vocab, vocab_from_json, load_or_create_vocab
 from sockeye.utils import check_condition
+from sockeye.train import check_resume, determine_context
 from sockeye.training import EarlyStoppingTrainer
 
 
@@ -44,7 +46,7 @@ def lm_create_data_iters_and_vocabs(args: argparse.Namespace,
 
     # TODO: option arguments/constants should be well-structured
     train_data_error_msg = "Specify a LM training corpus with training and development data."
-    check_condition(args.train_data is None and args.dev_data is None, train_data_error_msg)
+    check_condition(args.train_data is not None and args.dev_data is not None, train_data_error_msg)
 
     if resume_training:
         # Load the existing vocabs created when starting the training run.
@@ -57,7 +59,7 @@ def lm_create_data_iters_and_vocabs(args: argparse.Namespace,
 
     else:
         # Load or create vocabs
-        vocab_path = args.vocab
+        vocab_path = args.data_vocab
         vocab = load_or_create_vocab(
             data=args.train_data,
             vocab_path=vocab_path,
