@@ -6,7 +6,7 @@ sys.path.append('../')
 
 from sockeye import config
 from sockeye import constants as C
-from sockeye.data_io import BaseParallelSampleIter, RawParallelDatasetLoader, define_parallel_buckets, get_data_statistics, define_bucket_batch_sizes, BucketBatchSize
+from sockeye import data_io
 from sockeye import vocab
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ class LanguageModelDataStatistics(config.Config):
         self.num_sents_per_bucket = num_sents_per_bucket
         self.average_len_per_bucket = mean_len_per_bucket
 
-    def log(self, bucket_batch_sizes: Optional[List[BucketBatchSize]] = None):
+    def log(self, bucket_batch_sizes: Optional[List[data_io.BucketBatchSize]] = None):
         logger.info("[LM] Tokens: %d", self.num_tokens)
         if self.num_tokens > 0:
             logger.info("[LM] Vocabulary coverage: %.0f%%",
@@ -46,7 +46,7 @@ class LanguageModelDataStatistics(config.Config):
             describe_data_and_buckets(self, bucket_batch_sizes)
 
 
-def lm_describe_data_and_buckets(data_statistics: LanguageModelDataStatistics, bucket_batch_sizes: List[BucketBatchSize]):
+def lm_describe_data_and_buckets(data_statistics: LanguageModelDataStatistics, bucket_batch_sizes: List[data_io.BucketBatchSize]):
     check_condition(len(bucket_batch_sizes) == len(data_statistics.buckets),
                     "[LM] Number of bucket batch sizes (%d) does not match number of buckets in statistics (%d)."
                     % (len(bucket_batch_sizes), len(data_statistics.buckets)))
@@ -86,10 +86,10 @@ class LanguageModelDataConfig(config.Config):
         self.data_statistics = data_statistics
         self.max_seq_len = max_seq_len
 
-def lm_get_validation_data_iter(data_loader: RawParallelDatasetLoader,
+def lm_get_validation_data_iter(data_loader: data_io.RawParallelDatasetLoader,
                              validation_data: str,
                              buckets: List[Tuple[int, int]],
-                             bucket_batch_sizes: List[BucketBatchSize],
+                             bucket_batch_sizes: List[data_io.BucketBatchSize],
                              vocab: vocab.Vocab,
                              max_seq_len: int,
                              batch_size: int,
@@ -104,8 +104,8 @@ def lm_get_validation_data_iter(data_loader: RawParallelDatasetLoader,
     length_ratio_mean = 1
     length_ratio_std = 0
 
-    validation_input_sentences = SequenceReader(validation_data, vocab, add_bos=True)
-    validation_output_sentences = SequenceReader(validation_data, vocab, limit=None)
+    validation_input_sentences = data_io.SequenceReader(validation_data, vocab, add_bos=True)
+    validation_output_sentences = data_io.SequenceReader(validation_data, vocab, limit=None)
 
     validation_data_statistics = get_data_statistics([validation_input_sentences],
                                                      validation_output_sentences,
@@ -120,7 +120,7 @@ def lm_get_validation_data_iter(data_loader: RawParallelDatasetLoader,
                                               validation_output_sentences,
                                               validation_data_statistics.num_sents_per_bucket).fill_up(bucket_batch_sizes, fill_up)
 
-    return ParallelSampleIter(data=validation_data_loaded,
+    return data_io.ParallelSampleIter(data=validation_data_loaded,
                               buckets=buckets,
                               batch_size=batch_size,
                               bucket_batch_sizes=bucket_batch_sizes,
@@ -164,20 +164,20 @@ def lm_get_training_data_iters(train_data: str,
     length_ratio_std = 0
 
     # Define buckets
-    buckets = define_parallel_buckets(max_seq_len, max_seq_len, bucket_width,
+    buckets = data_io.define_parallel_buckets(max_seq_len, max_seq_len, bucket_width,
                                       length_ratio_mean) if bucketing else [
         (max_seq_len, max_seq_len)]
 
     # Input starts from <s>
-    input_sentences = SequenceReader(train_data, vocab, add_bos=True)
-    output_sentences = SequenceReader(train_data, vocab)
+    input_sentences = data_io.SequenceReader(train_data, vocab, add_bos=True)
+    output_sentences = data_io.SequenceReader(train_data, vocab)
 
     # Pass 2: Get data statistics (for debugging)
-    data_statistics = get_data_statistics([input_sentences], output_sentences, buckets,
+    data_statistics = data_io.get_data_statistics([input_sentences], output_sentences, buckets,
                                           length_ratio_mean, length_ratio_std,
                                           [vocab], vocab)
 
-    bucket_batch_sizes = define_bucket_batch_sizes(buckets,
+    bucket_batch_sizes = data_io.define_bucket_batch_sizes(buckets,
                                                    batch_size,
                                                    batch_by_words,
                                                    batch_num_devices,
@@ -186,11 +186,11 @@ def lm_get_training_data_iters(train_data: str,
     data_statistics.log(bucket_batch_sizes)
 
     # </s> is added here in the output side (labels)
-    data_loader = RawParallelDatasetLoader(buckets=buckets,
+    data_loader = data_io.RawParallelDatasetLoader(buckets=buckets,
                                            eos_id=vocab[C.EOS_SYMBOL],
                                            pad_id=C.PAD_ID)
 
-    train_data_loaded = data_loader.load([input_sentences], output_sentences,
+    training_data = data_loader.load([input_sentences], output_sentences,
                                          data_statistics.num_sents_per_bucket).fill_up(bucket_batch_sizes, fill_up)
 
     data_info = LanguageModelDataInfo(data=train_data,
@@ -200,21 +200,26 @@ def lm_get_training_data_iters(train_data: str,
     config_data = LanguageModelDataConfig(data_statistics=data_statistics,
                                           max_seq_len=max_seq_len)
 
-    train_iter = ParallelSampleIter(data=training_data_loaded,
+    train_iter = data_io.ParallelSampleIter(data=training_data,
                                     buckets=buckets,
                                     batch_size=batch_size,
                                     bucket_batch_sizes=bucket_batch_sizes,
                                     num_factors=1)
 
-    validation_iter = get_validation_data_iter(data_loader=data_loader,
+    validation_sources = None
+    validation_target = None
+    source_vocabs = None
+    max_seq_len_source = 0
+
+    validation_iter = data_io.get_validation_data_iter(data_loader=data_loader,
                                                validation_sources=validation_sources,
                                                validation_target=validation_target,
                                                buckets=buckets,
                                                bucket_batch_sizes=bucket_batch_sizes,
                                                source_vocabs=source_vocabs,
-                                               target_vocab=target_vocab,
+                                               target_vocab=vocab,
                                                max_seq_len_source=max_seq_len_source,
-                                               max_seq_len_target=max_seq_len_target,
+                                               max_seq_len_target=max_seq_len,
                                                batch_size=batch_size,
                                                fill_up=fill_up)
 
