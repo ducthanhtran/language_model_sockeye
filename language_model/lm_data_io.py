@@ -9,6 +9,8 @@ from sockeye import constants as C
 from sockeye.data_io import BaseParallelSampleIter, RawParallelDatasetLoader, define_parallel_buckets, get_data_statistics, define_bucket_batch_sizes, BucketBatchSize
 from sockeye import vocab
 
+logger = logging.getLogger(__name__)
+
 
 class LanguageModelDataStatistics(config.Config):
 

@@ -1,6 +1,6 @@
 # Simple run script for debugging the language model training using WMT18 TR-EN data from newstest2017.
 WMT18_DIR="/work/smt2/tran/work/wmt18/tren"
-TRAIN="${WMT18_DIR}/train-newstest2017.gz"
+TRAIN="${WMT18_DIR}/train-newstest2017.100.gz" # 100 sentences
 DEV="${WMT18_DIR}/dev-newstest2017"
 
 OUTPUT="/work/smt2/tran/work/debug_output"
