@@ -3,7 +3,8 @@ import sys
 
 sys.path.append('../')
 
-from sockeye.arguments import regular_file, regular_folder, int_greater_or_equal, multiple_values
+import sockeye.constants as C
+from sockeye.arguments import regular_file, regular_folder, simple_dict, int_greater_or_equal, multiple_values, learning_schedule
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -21,11 +22,11 @@ def create_parser() -> argparse.ArgumentParser:
 def add_params_data(parser: argparse.ArgumentParser) -> None:
     parser.add_argument('--train-data',
                         required=True,
-                        type=sockeye.arguments.regular_file(),
+                        type=regular_file(),
                         help='training data. Target labels are generated')
     parser.add_argument('--dev-data',
                         required=True,
-                        type=sockeye.arguments.regular_file(),
+                        type=regular_file(),
                         help='development data - used for early stopping')
 
 
@@ -33,7 +34,7 @@ def add_params_output(parser: argparse.ArgumentParser) -> None:
     parser.add_argument('--output', '-o',
                         required=True,
                         help='Folder where model & training results are written to.')
-    params.add_argument('--overwrite-output',
+    parser.add_argument('--overwrite-output',
                         action='store_true',
                         help='Delete all contents of the model directory if it already exists.')
 
@@ -140,7 +141,7 @@ def add_params_model(parser: argparse.ArgumentParser):
 
     # embedding arguments
     model_params.add_argument('--num-embed',
-                              type=greater_or_equal(1),
+                              type=int_greater_or_equal(1),
                               default=512,
                               help='Embedding size for tokens. Default: %(default)s.')
     model_params.add_argument('--layer-normalization', action="store_true",
