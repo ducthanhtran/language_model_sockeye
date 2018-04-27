@@ -1,11 +1,12 @@
 import logging
 import sys
+from typing import List, Tuple, Optional
 
 sys.path.append('../')
 
 from sockeye import config
 from sockeye import constants as C
-from sockeye.data_io import BaseParallelSampleIter, define_parallel_buckets, get_data_statistics, define_bucket_batch_sizes, BucketBatchSize
+from sockeye.data_io import BaseParallelSampleIter, RawParallelDatasetLoader, define_parallel_buckets, get_data_statistics, define_bucket_batch_sizes, BucketBatchSize
 from sockeye import vocab
 
 class LanguageModelDataStatistics(config.Config):
