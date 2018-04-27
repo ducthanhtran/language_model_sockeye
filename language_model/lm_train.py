@@ -14,7 +14,8 @@ sys.path.append('../')
 
 from sockeye import config
 from sockeye.constants import BATCH_TYPE_WORD
-from sockeye.vocab import vocab_from_json, load_or_create_vocab
+from sockeye.data_io import DataConfig
+from sockeye.vocab import Vocab, vocab_from_json, load_or_create_vocab
 from sockeye.utils import check_condition
 from sockeye.training import EarlyStoppingTrainer
 
@@ -25,7 +26,7 @@ def lm_create_data_iters_and_vocabs(args: argparse.Namespace,
                                  output_folder: str) -> Tuple['data_io.BaseParallelSampleIter',
                                                               'data_io.BaseParallelSampleIter',
                                                               'data_io.DataConfig',
-                                                              vocab.Vocab]:
+                                                              Vocab]:
     """
     Create the data iterators and the vocabulary.
 
@@ -83,12 +84,11 @@ def lm_create_data_iters_and_vocabs(args: argparse.Namespace,
 
     return train_iter, validation_iter, config_data, vocab
 
-pdb.set_trace()
 
 # from sockeye.train
 def lm_create_model_config(args: argparse.Namespace,
                         data_vocab_size: int,
-                        config_data: data_io.DataConfig) -> model.ModelConfig:
+                        config_data: DataConfig) -> lm_common.LanguageModelConfig:
     # TODO: has yet to be modified/checked upon
     num_embed = args.num_embed
     embed_dropout_source, embed_dropout_target = args.embed_dropout
