@@ -93,12 +93,12 @@ def lm_get_validation_data_iter(data_loader: data_io.RawParallelDatasetLoader,
     validation_input_sentences = data_io.SequenceReader(validation_data, vocab, add_bos=True)
     validation_output_sentences = data_io.SequenceReader(validation_data, vocab, limit=None)
 
-    validation_data_statistics = get_data_statistics([validation_input_sentences],
-                                                     validation_output_sentences,
-                                                     buckets,
-                                                     length_ratio_mean,
-                                                     length_ratio_std,
-                                                     [vocab], vocab)
+    validation_data_statistics = data_io.get_data_statistics([validation_input_sentences],
+                                                             validation_output_sentences,
+                                                             buckets,
+                                                             length_ratio_mean,
+                                                             length_ratio_std,
+                                                             [vocab], vocab)
 
     validation_data_statistics.log(bucket_batch_sizes)
 
@@ -107,10 +107,10 @@ def lm_get_validation_data_iter(data_loader: data_io.RawParallelDatasetLoader,
                                               validation_data_statistics.num_sents_per_bucket).fill_up(bucket_batch_sizes, fill_up)
 
     return data_io.ParallelSampleIter(data=validation_data_loaded,
-                              buckets=buckets,
-                              batch_size=batch_size,
-                              bucket_batch_sizes=bucket_batch_sizes,
-                              num_factors=1)
+                                      buckets=buckets,
+                                      batch_size=batch_size,
+                                      bucket_batch_sizes=bucket_batch_sizes,
+                                      num_factors=1)
 
 
 def lm_get_training_data_iters(train_data: str,
@@ -143,7 +143,7 @@ def lm_get_training_data_iters(train_data: str,
     :return: Tuple of (training data iterator, validation data iterator, data config, data info).
     """
     logger.info("===============================")
-    logger.info("Creating training data iterator")
+    logger.info("[LM] Creating training data iterator")
     logger.info("===============================")
 
     # Pass 1: Length ratio is always 1
@@ -178,7 +178,7 @@ def lm_get_training_data_iters(train_data: str,
                                            pad_id=C.PAD_ID)
 
     training_data = data_loader.load([input_sentences], output_sentences,
-                                         data_statistics.num_sents_per_bucket).fill_up(bucket_batch_sizes, fill_up)
+                                     data_statistics.num_sents_per_bucket).fill_up(bucket_batch_sizes, fill_up)
 
     data_info = LanguageModelDataInfo(data=train_data,
                                       vocab=vocab_path,
@@ -188,26 +188,18 @@ def lm_get_training_data_iters(train_data: str,
                                           max_seq_len=max_seq_len)
 
     train_iter = data_io.ParallelSampleIter(data=training_data,
-                                    buckets=buckets,
-                                    batch_size=batch_size,
-                                    bucket_batch_sizes=bucket_batch_sizes,
-                                    num_factors=1)
+                                            buckets=buckets,
+                                            batch_size=batch_size,
+                                            bucket_batch_sizes=bucket_batch_sizes,
+                                            num_factors=1)
 
-    validation_sources = []
-    validation_target = ""
-    source_vocabs = {}
-    max_seq_len_source = 0
-
-    validation_iter = data_io.get_validation_data_iter(data_loader=data_loader,
-                                               validation_sources=validation_sources,
-                                               validation_target=validation_target,
-                                               buckets=buckets,
-                                               bucket_batch_sizes=bucket_batch_sizes,
-                                               source_vocabs=source_vocabs,
-                                               target_vocab=vocab,
-                                               max_seq_len_source=max_seq_len_source,
-                                               max_seq_len_target=max_seq_len,
-                                               batch_size=batch_size,
-                                               fill_up=fill_up)
+    validation_iter = lm_get_validation_data_iter(data_loader=data_loader,
+                                                  validation_data=validation_data,
+                                                  buckets=buckets,
+                                                  bucket_batch_sizes=bucket_batch_sizes,
+                                                  vocab=vocab,
+                                                  max_seq_len=max_seq_len,
+                                                  batch_size=batch_size,
+                                                  fill_up=fill_up)
 
     return train_iter, validation_iter, config_data, data_info
