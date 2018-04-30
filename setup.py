@@ -119,7 +119,8 @@ args = dict(
             'sockeye-prepare-data = sockeye.prepare_data:main',
             'sockeye-train = sockeye.train:main',
             'sockeye-translate = sockeye.translate:main',
-            'sockeye-vocab = sockeye.vocab:main'
+            'sockeye-vocab = sockeye.vocab:main',
+            'lm-train = language_model.lm_train:main'
         ],
     },
 
