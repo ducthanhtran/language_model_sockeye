@@ -1,3 +1,5 @@
+import copy
+import logging
 import sys
 import mxnet as mx
 from typing import Any, Dict, List, Tuple, Union, Optional
@@ -12,6 +14,10 @@ from sockeye.encoder import Embedding
 from sockeye.layers import OutputLayer
 from sockeye.optimizers import SockeyeOptimizer, OptimizerConfig
 from sockeye import constants as C
+from sockeye import loss
+from sockeye import utils
+
+logger = logging.getLogger(__name__)
 
 
 class LanguageModel:
@@ -33,13 +39,13 @@ class LanguageModel:
         logger.info("%s", self.config)
 
         # decoder first (to know the decoder depth)
-        self.decoder = LanguageModelDecoder(config=self.config,
-                                            prefix=LM_PREFIX + "decoder_")
+        self.decoder = lm_decoder.LanguageModelDecoder(lm_config=self.config,
+                                                       prefix=lm_common.LM_PREFIX + "decoder_")
 
         # embedding
         embed_weight, out_weight = self._get_embed_weights()
         self.embedding = Embedding(self.config.config_embed,
-                                   prefix=LM_PREFIX + "embed_",
+                                   prefix=lm_common.LM_PREFIX + "embed_",
                                    embed_weight=embed_weight)
 
         # output layer
@@ -57,7 +63,7 @@ class LanguageModel:
 
         :param folder: Destination folder.
         """
-        fname = os.path.join(folder, LM_PREFIX + C.CONFIG_NAME)
+        fname = os.path.join(folder, lm_common.LM_PREFIX + C.CONFIG_NAME)
         self.config.save(fname)
         logger.info('Saved config to "%s"', fname)
 
@@ -104,7 +110,7 @@ class LanguageModel:
 
         :param folder: Destination folder.
         """
-        fname = os.path.join(folder, LM_PREFIX + C.VERSION_NAME)
+        fname = os.path.join(folder, lm_common.LM_PREFIX + C.VERSION_NAME)
         with open(fname, "w") as out:
             out.write(__version__)
 
@@ -114,9 +120,9 @@ class LanguageModel:
 
         :return: Tuple of parameter symbols.
         """
-        w_embed = mx.sym.Variable(LM_PREFIX + "embed_weight",
+        w_embed = mx.sym.Variable(lm_common.LM_PREFIX + "embed_weight",
                                   shape=(self.config.vocab_size, self.config.num_embed))
-        w_out = mx.sym.Variable(LM_PREFIX + "output_weight",
+        w_out = mx.sym.Variable(lm_common.LM_PREFIX + "output_weight",
                                 shape=(self.config.vocab_size, self.decoder.get_num_hidden()))
 
         if self.config.weight_tying:
