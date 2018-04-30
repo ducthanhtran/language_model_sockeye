@@ -200,28 +200,32 @@ class TrainingLanguageModel(lm_model.LanguageModel):
         utils.check_condition(provide_label_names == label_names,
                               "incompatible provide_label: %s, names should be %s" % (provide_label_names, label_names))
 
-        def sym_gen(seq_len):
+        def sym_gen(seq_lens):
             """
             Returns a (grouped) loss symbol given source & target input lengths.
             Also returns data and label names for the BucketingModule.
             """
 
+            input_seq_len, output_seq_len = seq_lens
+
             # input embedding
             # input_embed: (batch_size, input_embed_length, num_embed)
             (input_embed,
              input_embed_length,
-             input_embed_seq_len) = self.embedding.encode(input, input_length, seq_len)
+             input_embed_seq_len) = self.embedding.encode(input, input_length, input_seq_len)
 
             # output embedding
             # output_embed: (batch_size, output_embed_length, num_embed)
             (output_embed,
              output_embed_length,
-             output_embed_seq_len) = self.embedding.encode(output, output_length, seq_len)
+             output_embed_seq_len) = self.embedding.encode(output, output_length, output_seq_len)
 
             # decoder
             # decoded: (batch-size, output_len, decoder_depth)
-            decoded = self.decoder.decode_sequence(input_embed, input_embed_length, input_embed_seq_len,
-                                                   output_embed, output_embed_length, output_embed_seq_len)
+            # TODO: how about input?
+            decoded = self.decoder.decode_sequence(target_embed=output_embed,
+                                                   target_embed_lengths=output_embed_length,
+                                                   target_embed_max_length=output_embed_seq_len)
 
             # decoded: (batch_size * seq_len, decoder_depth)
             decoded = mx.sym.reshape(data=decoded, shape=(-3, 0))
