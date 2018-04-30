@@ -25,6 +25,8 @@ class LanguageModelDecoder(Decoder):
         self.rnn_config = self.lm_config.rnn_config
         self.prefix = prefix
 
+        self.num_hidden = self.rnn_config.num_hidden
+
         # use Sockeye's internal stacked RNN computation graph
         self.stacked_rnn = get_stacked_rnn(config=self.rnn_config, prefix=self.prefix)
         self.stacked_rnn_state_number = len(self.stacked_rnn.state_shape)
@@ -35,10 +37,11 @@ class LanguageModelDecoder(Decoder):
                         target_embed_lengths: mx.sym.Symbol,
                         target_embed_max_length: int) -> mx.sym.Symbol:
         target_embed = mx.sym.split(data=target_embed, num_outputs=target_embed_max_length, axis=1, squeeze_axis=True)
-        state = self.get_initial_state()
+        state = self.get_initial_state(target_embed_lengths)
 
         hidden_states = []  # type: List[mx.sym.Symbol]
         self.reset()
+        # TODO: do we take <s> into account here?
         for seq_idx in range(target_embed_max_length):
             # hidden: (batch_size, rnn_num_hidden)
             state = self._step(target_embed[seq_idx],
@@ -72,7 +75,7 @@ class LanguageModelDecoder(Decoder):
         for state_idx, (_, init_num_hidden) in enumerate(sum([rnn.state_shape for rnn in self.get_rnn_cells()], [])):
             init = mx.sym.tile(data=zeros, reps=(1, init_num_hidden))
             initial_layer_states.append(init)
-        return RecurrentDecoderState(hidden, layer_states)
+        return RecurrentDecoderState(hidden, initial_layer_states)
 
     def init_states(self,
                     target_embed_lengths: mx.sym.Symbol) -> List[mx.sym.Symbol]:
