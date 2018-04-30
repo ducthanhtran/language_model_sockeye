@@ -156,8 +156,8 @@ def lm_get_training_data_iters(train_data: str,
         (max_seq_len, max_seq_len)]
 
     # Input starts from <s>
-    input_sentences = data_io.SequenceReader(train_data, vocab, add_bos=True)
-    output_sentences = data_io.SequenceReader(train_data, vocab)
+    input_sentences = data_io.SequenceReader(train_data, vocab)
+    output_sentences = data_io.SequenceReader(train_data, vocab, add_bos=True)
 
     # Pass 2: Get data statistics (for debugging)
     data_statistics = data_io.get_data_statistics([input_sentences], output_sentences, buckets,
@@ -174,8 +174,8 @@ def lm_get_training_data_iters(train_data: str,
 
     # </s> is added here in the output side (labels)
     data_loader = data_io.RawParallelDatasetLoader(buckets=buckets,
-                                           eos_id=vocab[C.EOS_SYMBOL],
-                                           pad_id=C.PAD_ID)
+                                                   eos_id=vocab[C.EOS_SYMBOL],
+                                                   pad_id=C.PAD_ID)
 
     training_data = data_loader.load([input_sentences], output_sentences,
                                      data_statistics.num_sents_per_bucket).fill_up(bucket_batch_sizes, fill_up)
