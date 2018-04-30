@@ -46,64 +46,6 @@ class LanguageModelDataStatistics(config.Config):
             data_io.describe_data_and_buckets(self, bucket_batch_sizes)
 
 
-class LanguageModelDataStatisticsAccumulator:
-
-    def __init__(self,
-                 buckets: List[Tuple[int, int]],
-                 vocab_target: Dict[str, int],
-                 length_ratio_mean: float,
-                 length_ratio_std: float) -> None:
-        self.buckets = buckets
-        num_buckets = len(buckets)
-        self.length_ratio_mean = length_ratio_mean
-        self.length_ratio_std = length_ratio_std
-        self.unk_id_target = vocab_target[C.UNK_SYMBOL]
-        self.size_vocab_target = len(vocab_target)
-        self.num_sents = 0
-        self.num_discarded = 0
-        self.num_tokens_target = 0
-        self.num_unks_target = 0
-        self.max_observed_len_target = 0
-        self._mean_len_target_per_bucket = [OnlineMeanAndVariance() for _ in range(num_buckets)]
-
-    def sequence_pair(self,
-                      target: List[int],
-                      bucket_idx: Optional[int]):
-        if bucket_idx is None:
-            self.num_discarded += 1
-            return
-
-        target_len = len(target)
-
-        self._mean_len_target_per_bucket[bucket_idx].update(target_len)
-
-        self.num_sents += 1
-        self.num_tokens_target += target_len
-        self.max_observed_len_target = max(target_len, self.max_observed_len_target)
-
-        self.num_unks_target += target.count(self.unk_id_target)
-
-    @property
-    def mean_len_target_per_bucket(self) -> List[Optional[float]]:
-        return [mean_and_variance.mean if mean_and_variance.count > 0 else None
-                for mean_and_variance in self._mean_len_target_per_bucket]
-
-    @property
-    def statistics(self):
-        num_sents_per_bucket = [mean_and_variance.count for mean_and_variance in self._mean_len_target_per_bucket]
-        return LanguageModelDataStatistics(num_sents=self.num_sents,
-                                           num_discarded=self.num_discarded,
-                                           num_tokens_target=self.num_tokens_target,
-                                           num_unks_target=self.num_unks_target,
-                                           max_observed_len_target=self.max_observed_len_target,
-                                           size_vocab_target=self.size_vocab_target,
-                                           length_ratio_mean=self.length_ratio_mean,
-                                           length_ratio_std=self.length_ratio_std,
-                                           buckets=self.buckets,
-                                           num_sents_per_bucket=num_sents_per_bucket,
-                                           mean_len_target_per_bucket=self.mean_len_target_per_bucket)
-
-
 class LanguageModelDataInfo(config.Config):
     """
     Stores training data information that is not relevant for inference.
