@@ -144,6 +144,11 @@ def add_params_model(parser: argparse.ArgumentParser):
                               type=int_greater_or_equal(1),
                               default=512,
                               help='Embedding size for tokens. Default: %(default)s.')
+    model_params.add_argument('--weight-tying',
+                              action='store_true',
+                              help='Turn on weight tying (see arxiv.org/abs/1608.05859). '
+                                   'Default: False.')
+
     model_params.add_argument('--layer-normalization', action="store_true",
                               help="Adds layer normalization before non-linear activations. "
                                    "This includes MLP attention, RNN decoder state initialization, "
