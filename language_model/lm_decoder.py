@@ -89,6 +89,40 @@ class LanguageModelDecoder(Decoder):
                 cell.base_cell.reset()
             cell.reset()
 
+    def get_num_hidden(self) -> int:
+        """
+        :return: The representation size of this decoder.
+        """
+        return self.num_hidden
+
+    def state_variables(self, target_max_length: int) -> List[mx.sym.Symbol]:
+        """
+        Returns the list of symbolic variables for this decoder to be used during inference.
+
+        :param target_max_length: Current target sequence lengths.
+        :return: List of symbolic variables.
+        """
+        # TODO: implement this for inference!
+        pass
+
+    def state_shapes(self,
+                     batch_size: int,
+                     target_max_length: int,
+                     source_encoded_max_length: int,
+                     source_encoded_depth: int) -> List[mx.io.DataDesc]:
+        """
+        Returns a list of shape descriptions given batch size, encoded source max length and encoded source depth.
+        Used for inference.
+
+        :param batch_size: Batch size during inference.
+        :param target_max_length: Current target sequence length.
+        :param source_encoded_max_length: Size of encoder time dimension.
+        :param source_encoded_depth: Depth of encoded source.
+        :return: List of shape descriptions.
+        """
+        # TODO: implement this for inference!
+        pass
+
     def get_rnn_cells(self) -> List[mx.rnn.BaseRNNCell]:
         return [self.stacked_rnn]
 
