@@ -188,8 +188,9 @@ class TrainingLanguageModel(lm_model.LanguageModel):
 
         self.model_loss = loss.get_loss(self.config.config_loss)
 
-        data_names = [lm_common.LM_PREFIX + "input", lm_common.LM_PREFIX + "output"]
-        label_names = [lm_common.LM_PREFIX + "label"]
+        # LM: source = input, target = output, label = shifted input
+        data_names = [C.SOURCE_NAME, C.TARGET_NAME]
+        label_names = [C.TARGET_LABEL_NAME]
 
         # check provide_{data,label} names
         provide_data_names = [d[0] for d in provide_data]
