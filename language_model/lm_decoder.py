@@ -19,7 +19,7 @@ RecurrentDecoderState = NamedTuple('RecurrentDecoderState', [
 class LanguageModelDecoder(Decoder):
 
     def __init__(self,
-                 lm_config: lm_common.LanguageModelConfig,
+                 lm_config: lm_common.LMConfig,
                  prefix: str = lm_common.LM_PREFIX) -> None:
         self.lm_config = lm_config
         self.rnn_config = self.lm_config.rnn_config

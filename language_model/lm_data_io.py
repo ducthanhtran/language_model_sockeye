@@ -1,6 +1,9 @@
 import logging
+import math
+import random
 import sys
-from typing import Any, Iterable, List, Tuple, Optional, Sized
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Iterable, List, Tuple, Optional, Sized
 
 import mxnet as mx
 import numpy as np
@@ -238,11 +241,10 @@ class BaseMonolingualSampleIter(mx.io.DataIter, ABC):
         super().__init__(batch_size=batch_size)
 
         self.buckets = list(buckets)
-        self.default_bucket_key = get_default_bucket_key(self.buckets)
+        self.default_bucket_key = get_monolingual_default_bucket_key(self.buckets)
         self.bucket_batch_sizes = bucket_batch_sizes
         self.target_data_name = target_data_name
         self.label_name = label_name
-        self.num_factors = num_factors
         self.dtype = dtype
 
         # "Staging area" that needs to fit any size batch we're using by total number of elements.
@@ -467,7 +469,7 @@ class LMDataStatistics(config.Config):
         logger.info("[LM] %d sequences across %d buckets", self.num_sents, len(self.num_sents_per_bucket))
         logger.info("[LM] %d sequences did not fit into buckets and were discarded", self.num_discarded)
         if bucket_batch_sizes is not None:
-            describe_data_and_buckets(self, bucket_batch_sizes)
+            lm_describe_data_and_buckets(self, bucket_batch_sizes)
 
 
 def lm_describe_data_and_buckets(data_statistics: LMDataStatistics, bucket_batch_sizes: List[MonolingualBucketBatchSize]):
@@ -656,12 +658,12 @@ def define_monolingual_bucket_batch_sizes(buckets: List[int],
             batch_size_word = batch_size_seq * average_seq_len
         bucket_batch_sizes.append(MonolingualBucketBatchSize(bucket, batch_size_seq, batch_size_word))
         # Track largest number of word samples in a batch
-        largest_total_num_words = max(largest_total_num_words, batch_size_seq * max(*bucket))
+        largest_total_num_words = max(largest_total_num_words, batch_size_seq * bucket)
 
     # Final step: guarantee that largest bucket by sequence length also has largest total batch size.
     # When batching by sentences, this will already be the case.
     if batch_by_words:
-        padded_seq_len = max(*buckets[-1])
+        padded_seq_len = max(buckets[-1])
         average_seq_len = data_target_average_len[-1]
         while bucket_batch_sizes[-1].batch_size * padded_seq_len < largest_total_num_words:
             bucket_batch_sizes[-1] = MonolingualBucketBatchSize(
@@ -683,7 +685,7 @@ def lm_get_training_data_iters(target: str,
                                bucketing: bool,
                                bucket_width: int) -> Tuple['BaseMonolingualSampleIter',
                                                            'BaseMonolingualSampleIter',
-                                                           'DataConfig', 'DataInfo']:
+                                                           'LMDataConfig', 'LMDataInfo']:
     """
     Returns data iterators for training and validation data.
 
@@ -708,7 +710,7 @@ def lm_get_training_data_iters(target: str,
     buckets = data_io.define_buckets(max_seq_len_target, bucket_width) if bucketing else [max_seq_len_target]
 
     # Input starts from <s>
-    target_sentences = data_io.SequenceReader(train_data, target_vocab, add_bos=True)
+    target_sentences = data_io.SequenceReader(target, target_vocab, add_bos=True)
 
     # Get data statistics
     data_statistics = lm_get_data_statistics(target_sentences, buckets, target_vocab)

@@ -13,12 +13,12 @@ from . import lm_arguments
 from . import lm_common
 from . import lm_data_io
 from . import lm_model
+from .lm_data_io import BaseMonolingualSampleIter, LMDataConfig
 
 sys.path.append('../')
 
 from sockeye import config
 from sockeye.constants import BATCH_TYPE_WORD
-from sockeye.data_io import BaseParallelSampleIter, DataConfig
 from sockeye.encoder import EmbeddingConfig
 from sockeye.loss import LossConfig
 from sockeye.rnn import RNNConfig
@@ -33,9 +33,9 @@ logger = logging.getLogger(__name__)
 # from sockeye.train
 def lm_create_data_iters_and_vocabs(args: argparse.Namespace,
                                     resume_training: bool,
-                                    output_folder: str) -> Tuple['data_io.BaseParallelSampleIter',
-                                                                 'data_io.BaseParallelSampleIter',
-                                                                 'data_io.DataConfig',
+                                    output_folder: str) -> Tuple['BaseMonolingualSampleIter',
+                                                                 'BaseMonolingualSampleIter',
+                                                                 'LMDataConfig',
                                                                  Vocab]:
     """
     Create the data iterators and the vocabulary.
@@ -45,7 +45,7 @@ def lm_create_data_iters_and_vocabs(args: argparse.Namespace,
     :param output_folder: Output folder.
     :return: The data iterators (train, validation, config_data) as well as the vocabulary.
     """
-    max_seq_len = args.max_seq_len
+    max_seq_len_target = args.max_seq_len
     num_words = args.num_words
     word_min_count = args.word_min_count
     batch_num_devices = 1 if args.use_cpu else sum(-di if di < 0 else 1 for di in args.device_ids)
@@ -57,32 +57,31 @@ def lm_create_data_iters_and_vocabs(args: argparse.Namespace,
 
     if resume_training:
         # Load the existing vocabs created when starting the training run.
-        lm_vocab = vocab_from_json(os.path.join(output_folder, lm_common.LM_PREFIX + lm_common.VOCAB_NAME))
+        target_vocab = vocab_from_json(os.path.join(output_folder, lm_common.LM_PREFIX + lm_common.VOCAB_NAME))
 
         # Recover the vocabulary path from the data info file:
-        data_info = cast(lm_data_io.LanguageModelDataInfo,
+        data_info = cast(lm_data_io.LMDataInfo,
                          Config.load(os.path.join(output_folder, lm_common.LM_DATA_INFO)))
-        vocab_path = data_info.vocab
+        target_vocab_path = data_info.vocab
 
     else:
         # Load or create vocabs
-        vocab_path = args.data_vocab
-        vocab = load_or_create_vocab(
-            data=args.train_data,
-            vocab_path=vocab_path,
-            num_words=num_words,
-            word_min_count=word_min_count)
+        target_vocab_path = args.vocab
+        target_vocab = load_or_create_vocab(data=args.train_data,
+                                            vocab_path=target_vocab_path,
+                                            num_words=num_words,
+                                            word_min_count=word_min_count)
 
     train_iter, validation_iter, config_data, data_info = lm_data_io.lm_get_training_data_iters(
-        train_data=os.path.abspath(args.train_data),
-        validation_data=os.path.abspath(args.dev_data),
-        vocab=vocab,
-        vocab_path=vocab_path,
+        target=os.path.abspath(args.train_data),
+        validation_target=os.path.abspath(args.dev_data),
+        target_vocab=target_vocab,
+        target_vocab_path=target_vocab_path,
         batch_size=args.batch_size,
         batch_by_words=batch_by_words,
         batch_num_devices=batch_num_devices,
         fill_up=args.fill_up,
-        max_seq_len=max_seq_len,
+        max_seq_len_target=max_seq_len_target,
         bucketing=not args.no_bucketing,
         bucket_width=args.bucket_width)
 
@@ -90,15 +89,15 @@ def lm_create_data_iters_and_vocabs(args: argparse.Namespace,
     logger.info("[LM] Writing LM data config to '%s'", data_info_fname)
     data_info.save(data_info_fname)
 
-    return train_iter, validation_iter, config_data, vocab
+    return train_iter, validation_iter, config_data, target_vocab
 
 
 # from sockeye.train
 def lm_create_model_config(args: argparse.Namespace,
-                           vocab_size: int,
-                           config_data: DataConfig) -> lm_common.LanguageModelConfig:
-    num_embed = args.num_embed
-    embed_dropout = args.embed_dropout
+                           target_vocab_size: int,
+                           config_data: LMDataConfig) -> lm_common.LMConfig:
+    num_embed_target = args.num_embed
+    embed_dropout_target = args.embed_dropout
 
     # TODO: adapt check_encoder_decoder_args(args) to LM
     # check_encoder_decoder_args(args)
@@ -113,31 +112,29 @@ def lm_create_model_config(args: argparse.Namespace,
                            first_residual_layer=args.rnn_first_residual_layer,
                            forget_bias=args.rnn_forget_bias)
 
-    # TODO: weight tying
-
-    config_embed = EmbeddingConfig(vocab_size=vocab_size,
-                                   num_embed=num_embed,
-                                   dropout=embed_dropout)
+    config_embed = EmbeddingConfig(vocab_size=target_vocab_size,
+                                   num_embed=num_embed_target,
+                                   dropout=embed_dropout_target)
 
     config_loss = LossConfig(name=args.loss,
-                             vocab_size=vocab_size,
+                             vocab_size=target_vocab_size,
                              normalization_type=args.loss_normalization_type,
                              label_smoothing=args.label_smoothing)
 
-    model_config = lm_common.LanguageModelConfig(config_data=config_data,
-                                                 vocab_size=vocab_size,
-                                                 num_embed=num_embed,
-                                                 rnn_config=rnn_config,
-                                                 config_embed=config_embed,
-                                                 config_loss=config_loss,
-                                                 weight_tying=args.weight_tying)
+    model_config = lm_common.LMConfig(config_data=config_data,
+                                      target_vocab_size=target_vocab_size,
+                                      num_embed_target=num_embed_target,
+                                      rnn_config=rnn_config,
+                                      config_embed=config_embed,
+                                      config_loss=config_loss,
+                                      weight_tying=args.weight_tying)
     return model_config
 
 
-def lm_create_training_model(config: lm_common.LanguageModelConfig,
+def lm_create_training_model(config: lm_common.LMConfig,
                              context: List[mx.Context],
                              output_dir: str,
-                             train_iter: BaseParallelSampleIter,
+                             train_iter: BaseMonolingualSampleIter,
                              args: argparse.Namespace) -> lm_model.TrainingLanguageModel:
     """
     Create a training model and load the parameters from disk if needed.
@@ -156,8 +153,8 @@ def lm_create_training_model(config: lm_common.LanguageModelConfig,
                                                     provide_label=train_iter.provide_label,
                                                     default_bucket_key=train_iter.default_bucket_key,
                                                     bucketing=not args.no_bucketing,
-                                                    gradient_compression_params=gradient_compression_params(args),
-                                                    fixed_param_names=[])
+                                                    gradient_compression_params=gradient_compression_params(args))
+    # TODO: fix params
 
     return training_model
 
@@ -171,15 +168,15 @@ if __name__ == '__main__':
     with ExitStack() as exit_stack:
         context = determine_context(args, exit_stack)
 
-        train_iter, eval_iter, config_data, data_vocab = lm_create_data_iters_and_vocabs(
+        train_iter, eval_iter, config_data, target_vocab = lm_create_data_iters_and_vocabs(
             args=args,
             resume_training=resume_training,
             output_folder=output_folder)
 
-        data_vocab_size = len(data_vocab)
-        logger.info('[LM] Vocabulary size: %s', data_vocab_size)
+        target_vocab_size = len(target_vocab)
+        logger.info('[LM] Vocabulary size: %s', target_vocab_size)
 
-        lm_model_config = lm_create_model_config(args, data_vocab_size, config_data)
+        lm_model_config = lm_create_model_config(args, target_vocab_size, config_data)
         lm_model_config.freeze()
 
         lm_training_model = lm_create_training_model(config=lm_model_config,

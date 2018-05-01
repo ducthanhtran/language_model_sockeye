@@ -1,5 +1,6 @@
 import copy
 import logging
+import os
 import sys
 import mxnet as mx
 from typing import Any, Dict, List, Tuple, Union, Optional
@@ -9,7 +10,7 @@ sys.path.append('../')
 from . import lm_common
 from . import lm_decoder
 from . import lm_model
-from sockeye.data_io import BaseParallelSampleIter
+from .lm_data_io import BaseMonolingualSampleIter
 from sockeye.encoder import Embedding
 from sockeye.layers import OutputLayer
 from sockeye.optimizers import SockeyeOptimizer, OptimizerConfig
@@ -33,7 +34,7 @@ class LanguageModel:
     :param config: Model configuration.
     """
 
-    def __init__(self, config: lm_common.LanguageModelConfig) -> None:
+    def __init__(self, config: lm_common.LMConfig) -> None:
         self.config = copy.deepcopy(config)
         self.config.freeze()
         logger.info("%s", self.config)
@@ -50,7 +51,7 @@ class LanguageModel:
 
         # output layer
         self.output_layer = OutputLayer(hidden_size=self.decoder.get_num_hidden(),
-                                        vocab_size=self.config.vocab_size,
+                                        vocab_size=self.config.target_vocab_size,
                                         weight=out_weight,
                                         weight_normalization=False)
 
@@ -68,16 +69,16 @@ class LanguageModel:
         logger.info('Saved config to "%s"', fname)
 
     @staticmethod
-    def load_config(fname: str) -> lm_common.LanguageModelConfig:
+    def load_config(fname: str) -> lm_common.LMConfig:
         """
         Loads model configuration.
 
         :param fname: Path to load model configuration from.
         :return: Model configuration.
         """
-        config = lm_common.LanguageModelConfig.load(fname)
+        config = lm_common.LMConfig.load(fname)
         logger.info('ModelConfig loaded from "%s"', fname)
-        return cast(lm_common.LanguageModelConfig, config)  # type: ignore
+        return cast(lm_common.LMConfig, config)  # type: ignore
 
     def save_params_to_file(self, fname: str):
         """
@@ -120,22 +121,22 @@ class LanguageModel:
 
         :return: Tuple of parameter symbols.
         """
-        w_embed = mx.sym.Variable(lm_common.LM_PREFIX + "embed_weight",
-                                  shape=(self.config.vocab_size, self.config.num_embed))
-        w_out = mx.sym.Variable(lm_common.LM_PREFIX + "output_weight",
-                                shape=(self.config.vocab_size, self.decoder.get_num_hidden()))
+        w_embed = mx.sym.Variable(lm_common.LM_PREFIX + C.TARGET_EMBEDDING_PREFIX + "weight",
+                                  shape=(self.config.target_vocab_size, self.config.num_embed_target))
+        w_out = mx.sym.Variable(lm_common.LM_PREFIX + "target_output_weight",
+                                shape=(self.config.target_vocab_size, self.decoder.get_num_hidden()))
 
         if self.config.weight_tying:
             logger.info("Tying the LM embeddings and output layer parameters.")
-            utils.check_condition(self.config.num_embed == self.decoder.get_num_hidden(),
+            utils.check_condition(self.config.num_embed_target == self.decoder.get_num_hidden(),
                                   "Weight tying requires LM embedding size and LM decoder hidden size " +
-                                  "to be equal: %d vs. %d" % (self.config.num_embed,
+                                  "to be equal: %d vs. %d" % (self.config.num_embed_target,
                                                               self.decoder.get_num_hidden()))
             w_out = w_embed
 
         return w_embed, w_out
 
-class TrainingLanguageModel(lm_model.LanguageModel):
+class TrainingLanguageModel(LanguageModel):
     """
     TrainingLanguageModel is a LanguageModel that fully unrolls over input and output sequences.
 
@@ -152,7 +153,7 @@ class TrainingLanguageModel(lm_model.LanguageModel):
     """
 
     def __init__(self,
-                 config: lm_common.LanguageModelConfig,
+                 config: lm_common.LMConfig,
                  context: List[mx.context.Context],
                  output_dir: str,
                  provide_data: List[mx.io.DataDesc],
@@ -177,19 +178,15 @@ class TrainingLanguageModel(lm_model.LanguageModel):
         """
         Initializes model components, creates training symbol and module, and binds it.
         """
-        input = mx.sym.Variable(lm_common.LM_PREFIX + "input")
-        input_words = input.split(num_outputs=self.config.config_embed.num_factors,
-                                  axis=2, squeeze_axis=True)[0]
-        input_length = utils.compute_lengths(input_words)
-        output = mx.sym.Variable(lm_common.LM_PREFIX + "output")
-        output_length = utils.compute_lengths(output)
-        labels = mx.sym.reshape(data=mx.sym.Variable(lm_common.LM_PREFIX + "label"),
+        target = mx.sym.Variable(C.TARGET_NAME)
+        target_length = utils.compute_lengths(target)
+        labels = mx.sym.reshape(data=mx.sym.Variable(C.TARGET_LABEL_NAME),
                                 shape=(-1,))
 
         self.model_loss = loss.get_loss(self.config.config_loss)
 
         # LM: source = input, target = output, label = shifted input
-        data_names = [C.SOURCE_NAME, C.TARGET_NAME]
+        data_names = [C.TARGET_NAME]
         label_names = [C.TARGET_LABEL_NAME]
 
         # check provide_{data,label} names
@@ -200,32 +197,25 @@ class TrainingLanguageModel(lm_model.LanguageModel):
         utils.check_condition(provide_label_names == label_names,
                               "incompatible provide_label: %s, names should be %s" % (provide_label_names, label_names))
 
-        def sym_gen(seq_lens):
+        def sym_gen(seq_len):
             """
             Returns a (grouped) loss symbol given source & target input lengths.
             Also returns data and label names for the BucketingModule.
             """
 
-            input_seq_len, output_seq_len = seq_lens
+            target_seq_len = seq_len
 
-            # input embedding
-            # input_embed: (batch_size, input_embed_length, num_embed)
-            (input_embed,
-             input_embed_length,
-             input_embed_seq_len) = self.embedding.encode(input, input_length, input_seq_len)
-
-            # output embedding
-            # output_embed: (batch_size, output_embed_length, num_embed)
-            (output_embed,
-             output_embed_length,
-             output_embed_seq_len) = self.embedding.encode(output, output_length, output_seq_len)
+            # target embedding
+            # target_embed: (batch_size, target_embed_length, num_embed)
+            (target_embed,
+             target_embed_length,
+             target_embed_seq_len) = self.embedding.encode(target, target_length, target_seq_len)
 
             # decoder
-            # decoded: (batch-size, output_len, decoder_depth)
-            # TODO: how about input?
-            decoded = self.decoder.decode_sequence(target_embed=output_embed,
-                                                   target_embed_lengths=output_embed_length,
-                                                   target_embed_max_length=output_embed_seq_len)
+            # decoded: (batch-size, target_len, decoder_depth)
+            decoded = self.decoder.decode_sequence(target_embed=target_embed,
+                                                   target_embed_lengths=target_embed_length,
+                                                   target_embed_max_length=target_embed_seq_len)
 
             # decoded: (batch_size * seq_len, decoder_depth)
             decoded = mx.sym.reshape(data=decoded, shape=(-3, 0))
@@ -248,7 +238,7 @@ class TrainingLanguageModel(lm_model.LanguageModel):
                                                  fixed_param_names=self.fixed_param_names)
         else:
             logger.info("No bucketing. Unrolled to (%d)",
-                        self.config.max_seq_len)
+                        self.config.max_seq_len_target)
             symbol, _, __ = sym_gen(default_bucket_key)
             self.module = mx.mod.Module(symbol=symbol,
                                         data_names=data_names,
@@ -310,7 +300,7 @@ class TrainingLanguageModel(lm_model.LanguageModel):
         """
         self.module.prepare(batch)
 
-    def evaluate(self, eval_iter: BaseParallelSampleIter, eval_metric: mx.metric.EvalMetric):
+    def evaluate(self, eval_iter: BaseMonolingualSampleIter, eval_metric: mx.metric.EvalMetric):
         """
         Resets and recomputes evaluation metric on given data iterator.
         """

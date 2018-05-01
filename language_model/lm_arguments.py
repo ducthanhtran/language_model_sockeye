@@ -85,7 +85,7 @@ def add_params_device(parser: argparse.ArgumentParser) -> None:
 
 
 def add_params_vocab(params):
-    params.add_argument('--data-vocab',
+    params.add_argument('--vocab',
                         required=False,
                         default=None,
                         help='Existing source vocabulary (JSON).')
