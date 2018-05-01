@@ -11,9 +11,22 @@ from sockeye import config
 from sockeye import constants as C
 from sockeye import data_io
 from sockeye import vocab
-from sockeye.utils import check_condition
+from sockeye.utils import check_condition, OnlineMeanAndVariance
 
 logger = logging.getLogger(__name__)
+
+
+class MonolingualBucketBatchSize:
+    """
+    :param bucket: The corresponding bucket.
+    :param batch_size: Number of sequences in each batch.
+    :param average_words_per_batch: Approximate number of non-padding tokens in each batch.
+    """
+
+    def __init__(self, bucket: int, batch_size: int, average_words_per_batch: float) -> None:
+        self.bucket = bucket
+        self.batch_size = batch_size
+        self.average_words_per_batch = average_words_per_batch
 
 
 class MonolingualDataSet(Sized):
@@ -59,7 +72,7 @@ class MonolingualDataSet(Sized):
         return MonolingualDataSet(target, label)
 
     def fill_up(self,
-                bucket_batch_sizes: List[data_io.BucketBatchSize],
+                bucket_batch_sizes: List[MonolingualBucketBatchSize],
                 fill_up: str,
                 seed: int = 42) -> 'MonolingualDataSet':
         """
@@ -273,7 +286,7 @@ class BaseMonolingualSampleIter(mx.io.DataIter, ABC):
 
 
 def get_monolingual_batch_indices(data: MonolingualDataSet,
-                                  bucket_batch_sizes: List[data_io.BucketBatchSize]) -> List[Tuple[int, int]]:
+                                  bucket_batch_sizes: List[MonolingualBucketBatchSize]) -> List[Tuple[int, int]]:
     """
     Returns a list of index tuples that index into the bucket and the start index inside a bucket given
     the batch size for a bucket. These indices are valid for the given dataset.
@@ -423,193 +436,316 @@ class MonolingualSampleIter(BaseMonolingualSampleIter):
         self.data = self.data.permute(self.data_permutations)
 
 
-class LanguageModelDataStatistics(config.Config):
+class LMDataStatistics(config.Config):
 
     def __init__(self,
                  num_sents: int,
                  num_discarded,
-                 num_tokens,
-                 num_unks,
-                 max_observed_len,
-                 size_vocab,
-                 buckets: List[Tuple[int, int]],
+                 num_tokens_target,
+                 num_unks_target,
+                 max_observed_len_target,
+                 size_vocab_target,
+                 buckets: List[int],
                  num_sents_per_bucket: List[int],
-                 mean_len_per_bucket: List[Optional[float]]) -> None:
+                 mean_len_target_per_bucket: List[Optional[float]]) -> None:
         super().__init__()
         self.num_sents = num_sents
         self.num_discarded = num_discarded
-        self.num_tokens = num_tokens
-        self.num_unks = num_unks
-        self.max_observed_len = max_observed_len
-        self.size_vocab = size_vocab
+        self.num_tokens_target = num_tokens_target
+        self.num_unks_target = num_unks_target
+        self.max_observed_len_target = max_observed_len_target
+        self.size_vocab_target = size_vocab_target
         self.buckets = buckets
         self.num_sents_per_bucket = num_sents_per_bucket
-        self.average_len_per_bucket = mean_len_per_bucket
+        self.average_len_target_per_bucket = mean_len_target_per_bucket
 
-    def log(self, bucket_batch_sizes: Optional[List[data_io.BucketBatchSize]] = None):
-        logger.info("[LM] Tokens: %d", self.num_tokens)
-        if self.num_tokens > 0:
+    def log(self, bucket_batch_sizes: Optional[List[MonolingualBucketBatchSize]] = None):
+        logger.info("[LM] Tokens: %d", self.num_tokens_target)
+        if self.num_tokens_target > 0:
             logger.info("[LM] Vocabulary coverage: %.0f%%",
-                        (1 - self.num_unks / self.num_tokens) * 100)
+                        (1 - self.num_unks_target / self.num_tokens_target) * 100)
         logger.info("[LM] %d sequences across %d buckets", self.num_sents, len(self.num_sents_per_bucket))
         logger.info("[LM] %d sequences did not fit into buckets and were discarded", self.num_discarded)
         if bucket_batch_sizes is not None:
-            data_io.describe_data_and_buckets(self, bucket_batch_sizes)
+            describe_data_and_buckets(self, bucket_batch_sizes)
 
 
-class LanguageModelDataInfo(config.Config):
+def lm_describe_data_and_buckets(data_statistics: LMDataStatistics, bucket_batch_sizes: List[MonolingualBucketBatchSize]):
+    """
+    Describes statistics across buckets
+    """
+    check_condition(len(bucket_batch_sizes) == len(data_statistics.buckets),
+                    "Number of bucket batch sizes (%d) does not match number of buckets in statistics (%d)."
+                    % (len(bucket_batch_sizes), len(data_statistics.buckets)))
+    for bucket_batch_size, num_seq in zip(bucket_batch_sizes, data_statistics.num_sents_per_bucket):
+        if num_seq > 0:
+            logger.info("Bucket %s: %d samples in %d batches of %d, ~%.1f tokens/batch.",
+                        bucket_batch_size.bucket,
+                        num_seq,
+                        math.ceil(num_seq / bucket_batch_size.batch_size),
+                        bucket_batch_size.batch_size,
+                        bucket_batch_size.average_words_per_batch)
+
+
+class LMDataStatisticsAccumulator:
+
+    def __init__(self,
+                 buckets: List[int],
+                 vocab_target: Dict[str, int]) -> None:
+        self.buckets = buckets
+        num_buckets = len(buckets)
+        self.unk_id_target = vocab_target[C.UNK_SYMBOL]
+        self.size_vocab_target = len(vocab_target)
+        self.num_sents = 0
+        self.num_discarded = 0
+        self.num_tokens_target = 0
+        self.num_unks_target = 0
+        self.max_observed_len_target = 0
+        self._mean_len_target_per_bucket = [OnlineMeanAndVariance() for _ in range(num_buckets)]
+
+    def sequence(self,
+                 target: List[int],
+                 bucket_idx: Optional[int]):
+        if bucket_idx is None:
+            self.num_discarded += 1
+            return
+
+        target_len = len(target)
+
+        self._mean_len_target_per_bucket[bucket_idx].update(target_len)
+
+        self.num_sents += 1
+        self.num_tokens_target += target_len
+        self.max_observed_len_target = max(target_len, self.max_observed_len_target)
+
+        self.num_unks_target += target.count(self.unk_id_target)
+
+    @property
+    def mean_len_target_per_bucket(self) -> List[Optional[float]]:
+        return [mean_and_variance.mean if mean_and_variance.count > 0 else None
+                for mean_and_variance in self._mean_len_target_per_bucket]
+
+    @property
+    def statistics(self):
+        num_sents_per_bucket = [mean_and_variance.count for mean_and_variance in self._mean_len_target_per_bucket]
+        return LMDataStatistics(num_sents=self.num_sents,
+                                num_discarded=self.num_discarded,
+                                num_tokens_target=self.num_tokens_target,
+                                num_unks_target=self.num_unks_target,
+                                max_observed_len_target=self.max_observed_len_target,
+                                size_vocab_target=self.size_vocab_target,
+                                buckets=self.buckets,
+                                num_sents_per_bucket=num_sents_per_bucket,
+                                mean_len_target_per_bucket=self.mean_len_target_per_bucket)
+
+
+def lm_get_data_statistics(target_sentences: Iterable[List[int]],
+                           buckets: List[int],
+                           target_vocab: vocab.Vocab) -> 'LMDataStatistics':
+    data_stats_accumulator = LMDataStatisticsAccumulator(buckets, target_vocab)
+
+    for target in target_sentences:
+        buck_idx, buck = get_monolingual_bucket(buckets, len(target))
+        data_stats_accumulator.sequence(target, buck_idx)
+
+    return data_stats_accumulator.statistics
+
+
+class LMDataInfo(config.Config):
     """
     Stores training data information that is not relevant for inference.
     """
 
     def __init__(self,
-                 data: str,
-                 vocab: Optional[str],
-                 num_shards: int) -> None:
+                 target: str,
+                 target_vocab: Optional[str]) -> None:
         super().__init__()
-        self.data = data
-        self.vocab = vocab
-        self.num_shards = num_shards
+        self.target = target
+        self.target_vocab = target_vocab
 
-class LanguageModelDataConfig(config.Config):
+class LMDataConfig(config.Config):
     """
     Stores data statistics relevant for inference.
     """
 
     def __init__(self,
-                 data_statistics: LanguageModelDataStatistics,
-                 max_seq_len: int) -> None:
+                 data_statistics: LMDataStatistics,
+                 max_seq_len_target: int) -> None:
         super().__init__()
         self.data_statistics = data_statistics
-        self.max_seq_len = max_seq_len
+        self.max_seq_len_target = max_seq_len_target
 
-def lm_get_validation_data_iter(data_loader: data_io.RawParallelDatasetLoader,
-                             validation_data: str,
-                             buckets: List[Tuple[int, int]],
-                             bucket_batch_sizes: List[data_io.BucketBatchSize],
-                             vocab: vocab.Vocab,
-                             max_seq_len: int,
-                             batch_size: int,
-                             fill_up: str) -> 'ParallelSampleIter':
+
+def lm_get_validation_data_iter(data_loader: RawMonolingualDatasetLoader,
+                                validation_target: str,
+                                buckets: List[int],
+                                bucket_batch_sizes: List[MonolingualBucketBatchSize],
+                                target_vocab: vocab.Vocab,
+                                max_seq_len_target: int,
+                                batch_size: int,
+                                fill_up: str) -> 'MonolingualSampleIter':
     """
-    Returns a ParallelSampleIter for the validation data.
+    Returns a MonolingualSampleIter for the validation data.
     """
-    logger.info("=================================")
-    logger.info("[LM] Creating validation data iterator")
-    logger.info("=================================")
+    logger.info("========================================")
+    logger.info(" [LM] Creating validation data iterator ")
+    logger.info("========================================")
 
-    length_ratio_mean = 1
-    length_ratio_std = 0
+    validation_target_sentences = data_io.SequenceReader(validation_target, target_vocab, add_bos=True, limit=None)
 
-    validation_input_sentences = data_io.SequenceReader(validation_data, vocab, add_bos=True)
-    validation_output_sentences = data_io.SequenceReader(validation_data, vocab, limit=None)
-
-    validation_data_statistics = data_io.get_data_statistics([validation_input_sentences],
-                                                             validation_output_sentences,
-                                                             buckets,
-                                                             length_ratio_mean,
-                                                             length_ratio_std,
-                                                             [vocab], vocab)
+    validation_data_statistics = lm_get_data_statistics(validation_target_sentences,
+                                                        buckets,
+                                                        target_vocab)
 
     validation_data_statistics.log(bucket_batch_sizes)
 
-    validation_data_loaded = data_loader.load([validation_input_sentences],
-                                              validation_output_sentences,
-                                              validation_data_statistics.num_sents_per_bucket).fill_up(bucket_batch_sizes, fill_up)
+    validation_data = data_loader.load(validation_target_sentences,
+                                       validation_data_statistics.num_sents_per_bucket).fill_up(bucket_batch_sizes, fill_up)
 
-    return data_io.ParallelSampleIter(data=validation_data_loaded,
-                                      buckets=buckets,
-                                      batch_size=batch_size,
-                                      bucket_batch_sizes=bucket_batch_sizes,
-                                      num_factors=1)
+    return MonolingualSampleIter(data=validation_data,
+                                 buckets=buckets,
+                                 batch_size=batch_size,
+                                 bucket_batch_sizes=bucket_batch_sizes)
 
 
-def lm_get_training_data_iters(train_data: str,
-                               validation_data: str,
-                               vocab: vocab.Vocab,
-                               vocab_path: Optional[str],
+def define_monolingual_bucket_batch_sizes(buckets: List[int],
+                                          batch_size: int,
+                                          batch_by_words: bool,
+                                          batch_num_devices: int,
+                                          data_target_average_len: List[Optional[float]]) -> List[MonolingualBucketBatchSize]:
+    """
+    Computes bucket-specific batch sizes (sentences, average_words).
+
+    If sentence-based batching: number of sentences is the same for each batch, determines the
+    number of words. Hence all batch sizes for each bucket are equal.
+
+    If word-based batching: number of sentences for each batch is set to the multiple of number
+    of devices that produces the number of words closest to the target batch size.  Average
+    target sentence length (non-padding symbols) is used for word number calculations.
+
+    :param buckets: Bucket list.
+    :param batch_size: Batch size.
+    :param batch_by_words: Batch by words.
+    :param batch_num_devices: Number of devices.
+    :param data_target_average_len: Optional average target length for each bucket.
+    """
+    check_condition(len(data_target_average_len) == len(buckets),
+                    "Must provide None or average target length for each bucket")
+    data_target_average_len = list(data_target_average_len)
+    bucket_batch_sizes = []  # type: List[MonolingualBucketBatchSize]
+    largest_total_num_words = 0
+    for buck_idx, bucket in enumerate(buckets):
+        # Target/label length with padding
+        padded_seq_len = bucket
+        # Average target/label length excluding padding
+        if data_target_average_len[buck_idx] is None:
+            data_target_average_len[buck_idx] = padded_seq_len
+        average_seq_len = data_target_average_len[buck_idx]
+
+        # Word-based: num words determines num sentences
+        # Sentence-based: num sentences determines num words
+        if batch_by_words:
+            check_condition(padded_seq_len <= batch_size, "Word batch size must cover sequence lengths for all"
+                                                          " buckets: (%d > %d)" % (padded_seq_len, batch_size))
+            # Multiple of number of devices (int) closest to target number of words, assuming each sentence is of
+            # average length
+            batch_size_seq = batch_num_devices * round((batch_size / average_seq_len) / batch_num_devices)
+            batch_size_word = batch_size_seq * average_seq_len
+        else:
+            batch_size_seq = batch_size
+            batch_size_word = batch_size_seq * average_seq_len
+        bucket_batch_sizes.append(MonolingualBucketBatchSize(bucket, batch_size_seq, batch_size_word))
+        # Track largest number of word samples in a batch
+        largest_total_num_words = max(largest_total_num_words, batch_size_seq * max(*bucket))
+
+    # Final step: guarantee that largest bucket by sequence length also has largest total batch size.
+    # When batching by sentences, this will already be the case.
+    if batch_by_words:
+        padded_seq_len = max(*buckets[-1])
+        average_seq_len = data_target_average_len[-1]
+        while bucket_batch_sizes[-1].batch_size * padded_seq_len < largest_total_num_words:
+            bucket_batch_sizes[-1] = MonolingualBucketBatchSize(
+                bucket_batch_sizes[-1].bucket,
+                bucket_batch_sizes[-1].batch_size + batch_num_devices,
+                bucket_batch_sizes[-1].average_words_per_batch + batch_num_devices * average_seq_len)
+    return bucket_batch_sizes
+
+
+def lm_get_training_data_iters(target: str,
+                               validation_target: str,
+                               target_vocab: vocab.Vocab,
+                               target_vocab_path: Optional[str],
                                batch_size: int,
                                batch_by_words: bool,
                                batch_num_devices: int,
                                fill_up: str,
-                               max_seq_len: int,
+                               max_seq_len_target: int,
                                bucketing: bool,
-                               bucket_width: int) -> Tuple['BaseParallelSampleIter',
-                                                           'BaseParallelSampleIter',
+                               bucket_width: int) -> Tuple['BaseMonolingualSampleIter',
+                                                           'BaseMonolingualSampleIter',
                                                            'DataConfig', 'DataInfo']:
     """
     Returns data iterators for training and validation data.
 
-    :param train_data: Path to training data.
-    :param validation_data: Path to validation data.
-    :param vocab: Vocabulary.
-    :param vocab_path: Path to vocabulary.
+    :param target: Path to training data.
+    :param validation_target: Path to validation data.
+    :param target_vocab: Vocabulary.
+    :param target_vocab_path: Path to vocabulary.
     :param batch_size: Batch size.
     :param batch_by_words: Size batches by words rather than sentences.
     :param batch_num_devices: Number of devices batches will be parallelized across.
     :param fill_up: Fill-up strategy for buckets.
-    :param max_seq_len: Maximum sequence length.
+    :param max_seq_len_target: Maximum sequence length.
     :param bucketing: Whether to use bucketing.
     :param bucket_width: Size of buckets.
     :return: Tuple of (training data iterator, validation data iterator, data config, data info).
     """
-    logger.info("===============================")
-    logger.info("[LM] Creating training data iterator")
-    logger.info("===============================")
-
-    # Pass 1: Length ratio is always 1
-    length_ratio_mean = 1
-    length_ratio_std = 0
+    logger.info("======================================")
+    logger.info(" [LM] Creating training data iterator ")
+    logger.info("======================================")
 
     # Define buckets
-    buckets = data_io.define_parallel_buckets(max_seq_len, max_seq_len, bucket_width,
-                                      length_ratio_mean) if bucketing else [
-        (max_seq_len, max_seq_len)]
+    buckets = data_io.define_buckets(max_seq_len_target, bucket_width) if bucketing else [max_seq_len_target]
 
     # Input starts from <s>
-    input_sentences = data_io.SequenceReader(train_data, vocab)
-    output_sentences = data_io.SequenceReader(train_data, vocab, add_bos=True)
+    target_sentences = data_io.SequenceReader(train_data, target_vocab, add_bos=True)
 
-    # Pass 2: Get data statistics (for debugging)
-    data_statistics = data_io.get_data_statistics([input_sentences], output_sentences, buckets,
-                                          length_ratio_mean, length_ratio_std,
-                                          [vocab], vocab)
+    # Get data statistics
+    data_statistics = lm_get_data_statistics(target_sentences, buckets, target_vocab)
 
-    bucket_batch_sizes = data_io.define_bucket_batch_sizes(buckets,
-                                                   batch_size,
-                                                   batch_by_words,
-                                                   batch_num_devices,
-                                                   data_statistics.average_len_target_per_bucket)
+    bucket_batch_sizes = define_monolingual_bucket_batch_sizes(buckets,
+                                                               batch_size,
+                                                               batch_by_words,
+                                                               batch_num_devices,
+                                                               data_statistics.average_len_target_per_bucket)
 
     data_statistics.log(bucket_batch_sizes)
 
     # </s> is added here in the output side (labels)
-    data_loader = data_io.RawParallelDatasetLoader(buckets=buckets,
-                                                   eos_id=vocab[C.EOS_SYMBOL],
-                                                   pad_id=C.PAD_ID)
+    data_loader = RawMonolingualDatasetLoader(buckets=buckets,
+                                              eos_id=target_vocab[C.EOS_SYMBOL],
+                                              pad_id=C.PAD_ID)
 
-    training_data = data_loader.load([input_sentences], output_sentences,
+    training_data = data_loader.load(target_sentences,
                                      data_statistics.num_sents_per_bucket).fill_up(bucket_batch_sizes, fill_up)
 
-    data_info = LanguageModelDataInfo(data=train_data,
-                                      vocab=vocab_path,
-                                      num_shards=1)
+    data_info = LMDataInfo(target=target,
+                           target_vocab=target_vocab_path)
 
-    config_data = LanguageModelDataConfig(data_statistics=data_statistics,
-                                          max_seq_len=max_seq_len)
+    config_data = LMDataConfig(data_statistics=data_statistics,
+                               max_seq_len_target=max_seq_len_target)
 
-    train_iter = data_io.ParallelSampleIter(data=training_data,
-                                            buckets=buckets,
-                                            batch_size=batch_size,
-                                            bucket_batch_sizes=bucket_batch_sizes,
-                                            num_factors=1)
+    train_iter = MonolingualSampleIter(data=training_data,
+                                       buckets=buckets,
+                                       batch_size=batch_size,
+                                       bucket_batch_sizes=bucket_batch_sizes)
 
     validation_iter = lm_get_validation_data_iter(data_loader=data_loader,
-                                                  validation_data=validation_data,
+                                                  validation_target=validation_target,
                                                   buckets=buckets,
                                                   bucket_batch_sizes=bucket_batch_sizes,
-                                                  vocab=vocab,
-                                                  max_seq_len=max_seq_len,
+                                                  target_vocab=target_vocab,
+                                                  max_seq_len_target=max_seq_len_target,
                                                   batch_size=batch_size,
                                                   fill_up=fill_up)
 
