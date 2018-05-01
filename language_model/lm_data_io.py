@@ -2,10 +2,10 @@ import logging
 import sys
 from typing import Any, Iterable, List, Tuple, Optional, Sized
 
-sys.path.append('../')
-
 import mxnet as mx
 import numpy as np
+
+sys.path.append('../')
 
 from sockeye import config
 from sockeye import constants as C
@@ -33,6 +33,7 @@ class MonolingualDataSet(Sized):
         self.target = target
         self.label = label
 
+    # Number of buckets
     def __len__(self) -> int:
         return len(self.target)
 
@@ -198,6 +199,228 @@ class RawMonolingualDatasetLoader:
                         num_pad_target / num_tokens_target * 100)
 
         return MonolingualDataSet(data_target, data_label)
+
+
+def get_monolingual_default_bucket_key(buckets: List[int]) -> int:
+    """
+    Returns the default bucket from a list of buckets, i.e. the largest bucket.
+
+    :param buckets: List of buckets.
+    :return: The largest bucket in the list.
+    """
+    return max(buckets)
+
+class BaseMonolingualSampleIter(mx.io.DataIter, ABC):
+    """
+    Base monolingual sample iterator.
+    """
+
+    def __init__(self,
+                 buckets,
+                 batch_size,
+                 bucket_batch_sizes,
+                 target_data_name,
+                 label_name,
+                 dtype='float32') -> None:
+        super().__init__(batch_size=batch_size)
+
+        self.buckets = list(buckets)
+        self.default_bucket_key = get_default_bucket_key(self.buckets)
+        self.bucket_batch_sizes = bucket_batch_sizes
+        self.target_data_name = target_data_name
+        self.label_name = label_name
+        self.num_factors = num_factors
+        self.dtype = dtype
+
+        # "Staging area" that needs to fit any size batch we're using by total number of elements.
+        # When computing per-bucket batch sizes, we guarantee that the default bucket will have the
+        # largest total batch size.
+        # Note: this guarantees memory sharing for input data and is generally a good heuristic for
+        # other parts of the model, but it is possible that some architectures will have intermediate
+        # operations that produce shapes larger than the default bucket size.  In these cases, MXNet
+        # will silently allocate additional memory.
+        self.provide_data = [
+            mx.io.DataDesc(name=self.target_data_name,
+                           shape=(self.bucket_batch_sizes[-1].batch_size, self.default_bucket_key),
+                           layout=C.BATCH_MAJOR)]
+        self.provide_label = [
+            mx.io.DataDesc(name=self.label_name,
+                           shape=(self.bucket_batch_sizes[-1].batch_size, self.default_bucket_key),
+                           layout=C.BATCH_MAJOR)]
+
+        self.data_names = [self.target_data_name]
+        self.label_names = [self.label_name]
+
+    @abstractmethod
+    def reset(self):
+        pass
+
+    @abstractmethod
+    def iter_next(self) -> bool:
+        pass
+
+    @abstractmethod
+    def next(self) -> mx.io.DataBatch:
+        pass
+
+    @abstractmethod
+    def save_state(self, fname: str):
+        pass
+
+    @abstractmethod
+    def load_state(self, fname: str):
+        pass
+
+
+def get_monolingual_batch_indices(data: MonolingualDataSet,
+                                  bucket_batch_sizes: List[data_io.BucketBatchSize]) -> List[Tuple[int, int]]:
+    """
+    Returns a list of index tuples that index into the bucket and the start index inside a bucket given
+    the batch size for a bucket. These indices are valid for the given dataset.
+
+    :param data: Data to create indices for.
+    :param bucket_batch_sizes: Bucket batch sizes.
+    :return: List of 2d indices.
+    """
+    # create index tuples (i,j) into buckets: i := bucket index ; j := row index of bucket array
+    idxs = []  # type: List[Tuple[int, int]]
+    for buck_idx, buck in enumerate(data.target):
+        bucket = bucket_batch_sizes[buck_idx].bucket
+        batch_size = bucket_batch_sizes[buck_idx].batch_size
+        num_samples = data.target[buck_idx].shape[0]
+        rest = num_samples % batch_size
+        if rest > 0:
+            logger.info("Ignoring %d samples from bucket %s with %d samples due to incomplete batch",
+                        rest, bucket, num_samples)
+        idxs.extend([(buck_idx, j) for j in range(0, num_samples - batch_size + 1, batch_size)])
+    return idxs
+
+
+class MonolingualSampleIter(BaseMonolingualSampleIter):
+    """
+    Data iterator on a bucketed MonolingualDataSet. Shuffles data at every reset and supports saving and loading the
+    iterator state.
+    """
+
+    def __init__(self,
+                 data: MonolingualDataSet,
+                 buckets,
+                 batch_size,
+                 bucket_batch_sizes,
+                 target_data_name=C.TARGET_NAME,
+                 label_name=C.TARGET_LABEL_NAME,
+                 dtype='float32') -> None:
+        super().__init__(buckets=buckets, batch_size=batch_size, bucket_batch_sizes=bucket_batch_sizes,
+                         target_data_name=target_data_name, label_name=label_name, dtype=dtype)
+
+        # create independent lists to be shuffled
+        self.data = MonolingualDataSet(list(data.target), list(data.label))
+
+        # create index tuples (buck_idx, batch_start_pos) into buckets. These will be shuffled.
+        self.batch_indices = get_monolingual_batch_indices(self.data, bucket_batch_sizes)
+        self.curr_batch_index = 0
+
+        self.inverse_data_permutations = [mx.nd.arange(0, max(1, self.data.target[i].shape[0]))
+                                          for i in range(len(self.data))]
+        self.data_permutations = [mx.nd.arange(0, max(1, self.data.target[i].shape[0]))
+                                  for i in range(len(self.data))]
+
+        self.reset()
+
+    def reset(self):
+        """
+        Resets and reshuffles the data.
+        """
+        self.curr_batch_index = 0
+        # shuffle batch start indices
+        random.shuffle(self.batch_indices)
+
+        # restore
+        self.data = self.data.permute(self.inverse_data_permutations)
+
+        self.data_permutations, self.inverse_data_permutations = data_io.get_permutations(self.data.get_bucket_counts())
+
+        self.data = self.data.permute(self.data_permutations)
+
+    def iter_next(self) -> bool:
+        """
+        True if iterator can return another batch
+        """
+        return self.curr_batch_index != len(self.batch_indices)
+
+    def next(self) -> mx.io.DataBatch:
+        """
+        Returns the next batch from the data iterator.
+        """
+        if not self.iter_next():
+            raise StopIteration
+
+        i, j = self.batch_indices[self.curr_batch_index]
+        self.curr_batch_index += 1
+
+        batch_size = self.bucket_batch_sizes[i].batch_size
+        target = self.data.target[i][j:j + batch_size]
+        data = [target]
+        label = [self.data.label[i][j:j + batch_size]]
+
+        provide_data = [mx.io.DataDesc(name=n, shape=x.shape, layout=C.BATCH_MAJOR) for n, x in
+                        zip(self.data_names, data)]
+        provide_label = [mx.io.DataDesc(name=n, shape=x.shape, layout=C.BATCH_MAJOR) for n, x in
+                         zip(self.label_names, label)]
+
+        # TODO: num pad examples is not set here if fillup strategy would be padding
+        return mx.io.DataBatch(data, label,
+                               pad=0, index=None, bucket_key=self.buckets[i],
+                               provide_data=provide_data, provide_label=provide_label)
+
+    def save_state(self, fname: str):
+        """
+        Saves the current state of iterator to a file, so that iteration can be
+        continued. Note that the data is not saved, i.e. the iterator must be
+        initialized with the same parameters as in the first call.
+
+        :param fname: File name to save the information to.
+        """
+        with open(fname, "wb") as fp:
+            pickle.dump(self.batch_indices, fp)
+            pickle.dump(self.curr_batch_index, fp)
+            np.save(fp, [a.asnumpy() for a in self.inverse_data_permutations])
+            np.save(fp, [a.asnumpy() for a in self.data_permutations])
+
+    def load_state(self, fname: str):
+        """
+        Loads the state of the iterator from a file.
+
+        :param fname: File name to load the information from.
+        """
+
+        # restore order
+        self.data = self.data.permute(self.inverse_data_permutations)
+
+        with open(fname, "rb") as fp:
+            self.batch_indices = pickle.load(fp)
+            self.curr_batch_index = pickle.load(fp)
+            inverse_data_permutations = np.load(fp)
+            data_permutations = np.load(fp)
+
+        # Because of how checkpointing is done (pre-fetching the next batch in
+        # each iteration), curr_idx should always be >= 1
+        assert self.curr_batch_index >= 1
+        # Right after loading the iterator state, next() should be called
+        self.curr_batch_index -= 1
+
+        # load previous permutations
+        self.inverse_data_permutations = []
+        self.data_permutations = []
+
+        for bucket in range(len(self.data)):
+            inverse_permutation = mx.nd.array(inverse_data_permutations[bucket])
+            self.inverse_data_permutations.append(inverse_permutation)
+
+            permutation = mx.nd.array(data_permutations[bucket])
+            self.data_permutations.append(permutation)
+
+        self.data = self.data.permute(self.data_permutations)
 
 
 class LanguageModelDataStatistics(config.Config):
