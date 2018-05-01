@@ -104,17 +104,6 @@ class LanguageModel:
         self.params, self.aux_params = utils.load_params(fname)
         logger.info('Loaded LM params from "%s"', fname)
 
-    @staticmethod
-    def save_version(folder: str):
-        """
-        Saves version to <folder>/version.
-
-        :param folder: Destination folder.
-        """
-        fname = os.path.join(folder, lm_common.LM_PREFIX + C.VERSION_NAME)
-        with open(fname, "w") as out:
-            out.write(__version__)
-
     def _get_embed_weights(self) -> Tuple[mx.sym.Symbol, mx.sym.Symbol]:
         """
         Returns embedding parameters.
@@ -256,7 +245,6 @@ class TrainingLanguageModel(LanguageModel):
 
         self.module.symbol.save(os.path.join(self.output_dir, C.SYMBOL_NAME))
 
-        self.save_version(self.output_dir)
         self.save_config(self.output_dir)
 
     def run_forward_backward(self, batch: mx.io.DataBatch, metric: mx.metric.EvalMetric):
