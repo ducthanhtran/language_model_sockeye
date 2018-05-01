@@ -1,6 +1,6 @@
 import logging
 import sys
-from typing import List, Tuple, Optional, Sized
+from typing import Any, Iterable, List, Tuple, Optional, Sized
 
 sys.path.append('../')
 
@@ -110,6 +110,94 @@ class MonolingualDataSet(Sized):
                 label.append(self.label[buck_idx])
 
         return MonolingualDataSet(target, label)
+
+
+def get_monolingual_bucket(buckets: List[int],
+                           length_target: int) -> Optional[Tuple[int, int]]:
+    """
+    Returns bucket index and bucket from a list of buckets, given target length.
+    Returns (None, None) if no bucket fits.
+
+    :param buckets: List of buckets.
+    :param length_target: Length of target sequence.
+    :return: Tuple of (bucket index, bucket), or (None, None) if not fitting.
+    """
+    bucket = None, None  # type: Tuple[int, int]
+    for j, target_bkt in enumerate(buckets):
+        if target_bkt >= length_target:
+            bucket = j, target_bkt
+            break
+    return bucket
+
+
+class RawMonolingualDatasetLoader:
+    """
+    Loads a data set of variable-length monolingual sequences into buckets of NDArrays.
+
+    :param buckets: Bucket list.
+    :param eos_id: End-of-sentence id.
+    :param pad_id: Padding id.
+    :param eos_id: Unknown id.
+    :param dtype: Data type.
+    """
+
+    def __init__(self,
+                 buckets: List[int],
+                 eos_id: int,
+                 pad_id: int,
+                 dtype: str = 'float32') -> None:
+        self.buckets = buckets
+        self.eos_id = eos_id
+        self.pad_id = pad_id
+        self.dtype = dtype
+
+    def load(self,
+             target_sentences: Iterable[List[Any]],
+             num_samples_per_bucket: List[int]) -> 'MonolingualDataSet':
+
+        assert len(num_samples_per_bucket) == len(self.buckets)
+        data_target = [np.full((num_samples, target_len), self.pad_id, dtype=self.dtype)
+                       for target_len, num_samples in zip(self.buckets, num_samples_per_bucket)]
+        data_label = [np.full((num_samples, target_len), self.pad_id, dtype=self.dtype)
+                      for target_len, num_samples in zip(self.buckets, num_samples_per_bucket)]
+
+        bucket_sample_index = [0 for buck in self.buckets]
+
+        # track amount of padding introduced through bucketing
+        num_tokens_target = 0
+        num_pad_target = 0
+
+        # Bucket sentences as padded np arrays
+        for target in target_sentences:
+            target_len = len(target)
+            buck_index, buck = get_monolingual_bucket(self.buckets, target_len)
+            if buck is None:
+                continue  # skip this sentence
+
+            num_tokens_target += buck
+            num_pad_target += buck - target_len
+
+            sample_index = bucket_sample_index[buck_index]
+            # NOTE(yunsukim86): target already contains BOS
+            data_target[buck_index][sample_index, :target_len] = target
+            # NOTE(fhieber): while this is wasteful w.r.t memory, we need to explicitly create the label sequence
+            # with the EOS symbol here sentence-wise and not per-batch due to variable sequence length within a batch.
+            # Once MXNet allows item assignments given a list of indices (probably MXNet 1.0): e.g a[[0,1,5,2]] = x,
+            # we can try again to compute the label sequence on the fly in next().
+            # NOTE(yunsukim86): BOS dropped for label
+            data_label[buck_index][sample_index, :target_len] = target[1:] + [self.eos_id]
+
+            bucket_sample_index[buck_index] += 1
+
+        for i in range(len(data_target)):
+            data_target[i] = mx.nd.array(data_target[i], dtype=self.dtype)
+            data_label[i] = mx.nd.array(data_label[i], dtype=self.dtype)
+
+        if num_tokens_target > 0:
+            logger.info("Created bucketed monolingual data set. Introduced padding: target=%.1f%%)",
+                        num_pad_target / num_tokens_target * 100)
+
+        return MonolingualDataSet(data_target, data_label)
 
 
 class LanguageModelDataStatistics(config.Config):
