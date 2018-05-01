@@ -1,15 +1,115 @@
 import logging
 import sys
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Sized
 
 sys.path.append('../')
+
+import mxnet as mx
+import numpy as np
 
 from sockeye import config
 from sockeye import constants as C
 from sockeye import data_io
 from sockeye import vocab
+from sockeye.utils import check_condition
 
 logger = logging.getLogger(__name__)
+
+
+class MonolingualDataSet(Sized):
+    """
+    Bucketed monolingual data set with labels
+
+    target: given monolingual sent + BOS
+    label: given monolingual sent + EOS
+    """
+
+    def __init__(self,
+                 target: List[mx.nd.array],
+                 label: List[mx.nd.array]) -> None:
+        check_condition(len(target) == len(label),
+                        "Number of buckets for target/label do not match: %d/%d." % (len(target),
+                                                                                     len(label)))
+        self.target = target
+        self.label = label
+
+    def __len__(self) -> int:
+        return len(self.target)
+
+    def get_bucket_counts(self):
+        return [len(self.target[buck_idx]) for buck_idx in range(len(self))]
+
+    def save(self, fname: str):
+        """
+        Saves the dataset to a binary .npy file.
+        """
+        mx.nd.save(fname, self.target + self.label)
+
+    @staticmethod
+    def load(fname: str) -> 'MonolingualDataSet':
+        """
+        Loads a dataset from a binary .npy file.
+        """
+        data = mx.nd.load(fname)
+        n = len(data) // 2
+        target = data[:n]
+        label = data[n:]
+        assert len(target) == len(label)
+        return MonolingualDataSet(target, label)
+
+    def fill_up(self,
+                bucket_batch_sizes: List[data_io.BucketBatchSize],
+                fill_up: str,
+                seed: int = 42) -> 'MonolingualDataSet':
+        """
+        Returns a new dataset with buckets filled up using the specified fill-up strategy.
+
+        :param bucket_batch_sizes: Bucket batch sizes.
+        :param fill_up: Fill-up strategy.
+        :param seed: The random seed used for sampling sentences to fill up.
+        :return: New dataset with buckets filled up to the next multiple of batch size
+        """
+        target = list(self.target)
+        label = list(self.label)
+
+        rs = np.random.RandomState(seed)
+
+        for bucket_idx in range(len(self)):
+            bucket = bucket_batch_sizes[bucket_idx].bucket
+            bucket_batch_size = bucket_batch_sizes[bucket_idx].batch_size
+            bucket_target = self.target[bucket_idx]
+            bucket_label = self.label[bucket_idx]
+            num_samples = bucket_target.shape[0]
+
+            if num_samples % bucket_batch_size != 0:
+                if fill_up == 'replicate':
+                    rest = bucket_batch_size - num_samples % bucket_batch_size
+                    logger.info("Replicating %d random samples from %d samples in bucket %s "
+                                "to size it to multiple of %d",
+                                rest, num_samples, bucket, bucket_batch_size)
+                    random_indices = mx.nd.array(rs.randint(num_samples, size=rest))
+                    target[bucket_idx] = mx.nd.concat(bucket_target, bucket_target.take(random_indices), dim=0)
+                    label[bucket_idx] = mx.nd.concat(bucket_label, bucket_label.take(random_indices), dim=0)
+                else:
+                    raise NotImplementedError('Unknown fill-up strategy')
+
+        return MonolingualDataSet(target, label)
+
+    def permute(self, permutations: List[mx.nd.NDArray]) -> 'MonolingualDataSet':
+        assert len(self) == len(permutations)
+        target = []
+        label = []
+        for buck_idx in range(len(self)):
+            num_samples = self.target[buck_idx].shape[0]
+            if num_samples:  # not empty bucket
+                permutation = permutations[buck_idx]
+                target.append(self.target[buck_idx].take(permutation))
+                label.append(self.label[buck_idx].take(permutation))
+            else:
+                target.append(self.target[buck_idx])
+                label.append(self.label[buck_idx])
+
+        return MonolingualDataSet(target, label)
 
 
 class LanguageModelDataStatistics(config.Config):
