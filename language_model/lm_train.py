@@ -4,12 +4,16 @@ import argparse
 import json
 import logging
 import os
+import pickle
+import random
 import shutil
 import sys
+import time
 from contextlib import ExitStack
 from typing import cast, List, Optional, Tuple
 
 import mxnet as mx
+import numpy as np
 
 from . import lm_arguments
 from . import lm_common
@@ -21,12 +25,13 @@ sys.path.append('../')
 
 from sockeye import config
 from sockeye import loss
+from sockeye import lr_scheduler
 from sockeye import utils
 import sockeye.constants as C
 from sockeye.encoder import EmbeddingConfig
 from sockeye.optimizers import BatchState, CheckpointState, SockeyeOptimizer, OptimizerConfig
 from sockeye.rnn import RNNConfig
-from sockeye.vocab import Vocab, vocab_from_json, load_or_create_vocab
+from sockeye.vocab import Vocab, vocab_from_json, vocab_to_json, load_or_create_vocab
 from sockeye.utils import check_condition
 from sockeye.train import check_resume, create_optimizer_config, determine_context, gradient_compression_params
 from sockeye.training import TrainState, Speedometer
@@ -61,7 +66,7 @@ def lm_create_data_iters_and_vocabs(args: argparse.Namespace,
 
     if resume_training:
         # Load the existing vocabs created when starting the training run.
-        target_vocab = vocab_from_json(os.path.join(output_folder, lm_common.LM_PREFIX + lm_common.VOCAB_NAME))
+        target_vocab = vocab_from_json(os.path.join(output_folder, lm_common.LM_PREFIX + lm_common.LM_VOCAB_NAME))
 
         # Recover the vocabulary path from the data info file:
         data_info = cast(LMDataInfo,
@@ -749,8 +754,6 @@ if __name__ == '__main__':
                                             optimizer_config=create_optimizer_config(args, [target_vocab_size]),
                                             max_params_files_to_keep=args.keep_last_params,
                                             log_to_tensorboard=False)
-
-        pdb.set_trace() # NOTE: BREAK HERE
 
         lm_trainer.fit(train_iter=train_iter,
                        validation_iter=eval_iter,

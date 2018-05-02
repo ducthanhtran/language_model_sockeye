@@ -1,8 +1,10 @@
 import copy
 import logging
+from math import sqrt
 import os
 import sys
 import mxnet as mx
+from functools import reduce
 from typing import Any, Dict, List, Tuple, Union, Optional
 
 sys.path.append('../')
@@ -17,6 +19,7 @@ from sockeye.optimizers import SockeyeOptimizer, OptimizerConfig
 from sockeye import constants as C
 from sockeye import loss
 from sockeye import utils
+from sockeye.training import global_norm
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +127,13 @@ class LanguageModel:
             w_out = w_embed
 
         return w_embed, w_out
+
+
+def global_norm(ndarrays: List[mx.nd.NDArray]) -> float:
+    # accumulate in a list, as asscalar is blocking and this way we can run the norm calculation in parallel.
+    norms = [mx.nd.square(mx.nd.norm(arr)) for arr in ndarrays if arr is not None]
+    return sqrt(sum(norm.asscalar() for norm in norms))
+
 
 class TrainingLanguageModel(LanguageModel):
     """
