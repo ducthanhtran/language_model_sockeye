@@ -721,7 +721,9 @@ if __name__ == '__main__':
             resume_training=resume_training,
             output_folder=output_folder)
 
-        # TODO: dump vocabulary?
+        # Dump the vocabularies if we're just starting up
+        if not resume_training:
+            vocab_to_json(target_vocab, os.path.join(output_folder, lm_common.LM_PREFIX + lm_common.LM_VOCAB_NAME))
 
         target_vocab_size = len(target_vocab)
         logger.info('[LM] Vocabulary size: %s', target_vocab_size)
