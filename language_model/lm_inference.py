@@ -4,8 +4,11 @@ from typing import List, Tuple, Optional
 
 import mxnet as mx
 
+from . import lm_model
+
 sys.path.append('../')
 
+import sockeye.constants as C
 from sockeye.model import SockeyeModel
 from sockeye.vocab import Vocab, load_source_vocabs, vocab_from_json
 
@@ -365,7 +368,7 @@ def load_models(context: mx.context.Context,
         model_source_vocabs = load_source_vocabs(model_folder)
         source_vocabs.append(model_source_vocabs)
         target_vocabs.append(vocab_from_json(os.path.join(model_folder, C.VOCAB_TRG_NAME)))
-        model_config = model.SockeyeModel.load_config(os.path.join(model_folder, C.CONFIG_NAME))
+        model_config = lm_model.load_config(os.path.join(model_folder, C.CONFIG_NAME))
 
         if checkpoint is None:
             params_fname = os.path.join(model_folder, C.PARAMS_BEST_NAME)
