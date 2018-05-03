@@ -1,3 +1,4 @@
+import os
 import sys
 from typing import List, Tuple, Optional
 
@@ -6,6 +7,7 @@ import mxnet as mx
 sys.path.append('../')
 
 from sockeye.model import SockeyeModel
+from sockeye.vocab import Vocab
 
 
 BeamHistory = Dict[str, List]
@@ -332,8 +334,8 @@ def load_models(context: mx.context.Context,
                 max_output_length_num_stds: int = C.DEFAULT_NUM_STD_MAX_OUTPUT_LENGTH,
                 decoder_return_logit_inputs: bool = False,
                 cache_output_layer_w_b: bool = False) -> Tuple[List[InferenceModel],
-                                                               List[vocab.Vocab],
-                                                               vocab.Vocab]:
+                                                               List[Vocab],
+                                                               Vocab]:
     """
     Loads a list of models for inference.
 
@@ -363,10 +365,6 @@ def load_models(context: mx.context.Context,
         model_source_vocabs = vocab.load_source_vocabs(model_folder)
         source_vocabs.append(model_source_vocabs)
         target_vocabs.append(vocab.vocab_from_json(os.path.join(model_folder, C.VOCAB_TRG_NAME)))
-
-        model_version = utils.load_version(os.path.join(model_folder, C.VERSION_NAME))
-        logger.info("Model version: %s", model_version)
-        utils.check_version(model_version)
         model_config = model.SockeyeModel.load_config(os.path.join(model_folder, C.CONFIG_NAME))
 
         if checkpoint is None:
