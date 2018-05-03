@@ -50,7 +50,6 @@ class InferenceModel(SockeyeModel):
                                         vocabulary.  Used when logits/softmax are handled separately.
     :param cache_output_layer_w_b: Cache weights and biases for logit computation.
     """
-
     def __init__(self,
                  config: lm_common.LMConfig,
                  params_fname: str,
