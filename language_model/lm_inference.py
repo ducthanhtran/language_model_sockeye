@@ -7,7 +7,7 @@ import mxnet as mx
 sys.path.append('../')
 
 from sockeye.model import SockeyeModel
-from sockeye.vocab import Vocab
+from sockeye.vocab import Vocab, load_source_vocabs, vocab_from_json
 
 
 BeamHistory = Dict[str, List]
@@ -362,9 +362,9 @@ def load_models(context: mx.context.Context,
         checkpoints = [None] * len(model_folders)
 
     for model_folder, checkpoint in zip(model_folders, checkpoints):
-        model_source_vocabs = vocab.load_source_vocabs(model_folder)
+        model_source_vocabs = load_source_vocabs(model_folder)
         source_vocabs.append(model_source_vocabs)
-        target_vocabs.append(vocab.vocab_from_json(os.path.join(model_folder, C.VOCAB_TRG_NAME)))
+        target_vocabs.append(vocab_from_json(os.path.join(model_folder, C.VOCAB_TRG_NAME)))
         model_config = model.SockeyeModel.load_config(os.path.join(model_folder, C.CONFIG_NAME))
 
         if checkpoint is None:
