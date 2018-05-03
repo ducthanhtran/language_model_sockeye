@@ -49,6 +49,7 @@ python -m language_model.lm_train --train-data "${TRAIN}" \
                                   --num-embed 512 \
                                   --rnn-num-hidden 2024 \
                                   --num-layers 2 \
-                                  --batch-size 64
+                                  --batch-size 64 \
+                                  --max-seq-len 75
 
 deactivate
