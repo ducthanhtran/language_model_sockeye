@@ -4,7 +4,9 @@ from typing import List, Tuple, Optional
 
 import mxnet as mx
 
+from . import lm_common
 from . import lm_model
+
 
 sys.path.append('../')
 
@@ -17,6 +19,21 @@ BeamHistory = Dict[str, List]
 Tokens = List[str]
 
 
+class ModelState:
+    """
+    A ModelState encapsulates information about the decoder states of an InferenceModel.
+    """
+
+    def __init__(self, states: List[mx.nd.NDArray]) -> None:
+        self.states = states
+
+    def sort_state(self, best_hyp_indices: mx.nd.NDArray):
+        """
+        Sorts states according to k-best order from last step in beam search.
+        """
+        self.states = [mx.nd.take(ds, best_hyp_indices) for ds in self.states]
+
+
 class InferenceModel(SockeyeModel):
     """
     InferenceModel is a SockeyeModel that supports three operations used for inference/decoding:
@@ -27,7 +44,6 @@ class InferenceModel(SockeyeModel):
     :param config: Configuration object holding details about the model.
     :param params_fname: File with model parameters.
     :param context: MXNet context to bind modules to.
-    :param beam_size: Beam size.
     :param batch_size: Batch size.
     :param softmax_temperature: Optional parameter to control steepness of softmax distribution.
     :param max_output_length_num_stds: Number of standard deviations as safety margin for maximum output length.
@@ -37,10 +53,9 @@ class InferenceModel(SockeyeModel):
     """
 
     def __init__(self,
-                 config: model.ModelConfig,
+                 config: lm_common.LMConfig,
                  params_fname: str,
                  context: mx.context.Context,
-                 beam_size: int,
                  batch_size: int,
                  softmax_temperature: Optional[float] = None,
                  max_output_length_num_stds: int = C.DEFAULT_NUM_STD_MAX_OUTPUT_LENGTH,
@@ -49,9 +64,6 @@ class InferenceModel(SockeyeModel):
         super().__init__(config)
         self.params_fname = params_fname
         self.context = context
-        self.beam_size = beam_size
-        utils.check_condition(beam_size < self.config.vocab_target_size,
-                              'The beam size must be smaller than the target vocabulary size.')
         self.batch_size = batch_size
         self.softmax_temperature = softmax_temperature
         self.max_input_length, self.get_max_output_length = models_max_input_output_length([self],
@@ -329,7 +341,6 @@ class InferenceModel(SockeyeModel):
 
 def load_models(context: mx.context.Context,
                 max_input_len: Optional[int],
-                beam_size: int,
                 batch_size: int,
                 model_folders: List[str],
                 checkpoints: Optional[List[int]] = None,
@@ -337,14 +348,12 @@ def load_models(context: mx.context.Context,
                 max_output_length_num_stds: int = C.DEFAULT_NUM_STD_MAX_OUTPUT_LENGTH,
                 decoder_return_logit_inputs: bool = False,
                 cache_output_layer_w_b: bool = False) -> Tuple[List[InferenceModel],
-                                                               List[Vocab],
                                                                Vocab]:
     """
     Loads a list of models for inference.
 
     :param context: MXNet context to bind modules to.
     :param max_input_len: Maximum input length.
-    :param beam_size: Beam size.
     :param batch_size: Batch size.
     :param model_folders: List of model folders to load models from.
     :param checkpoints: List of checkpoints to use for each model in model_folders. Use None to load best checkpoint.
@@ -358,7 +367,7 @@ def load_models(context: mx.context.Context,
     :return: List of models, source vocabulary, target vocabulary, source factor vocabularies.
     """
     models = []  # type: List[InferenceModel]
-    source_vocabs = []  # type: List[List[vocab.Vocab]]
+
     target_vocabs = []  # type: List[vocab.Vocab]
 
     if checkpoints is None:
@@ -366,7 +375,7 @@ def load_models(context: mx.context.Context,
 
     for model_folder, checkpoint in zip(model_folders, checkpoints):
         model_source_vocabs = load_source_vocabs(model_folder)
-        source_vocabs.append(model_source_vocabs)
+
         target_vocabs.append(vocab_from_json(os.path.join(model_folder, C.VOCAB_TRG_NAME)))
         model_config = lm_model.load_config(os.path.join(model_folder, C.CONFIG_NAME))
 
@@ -378,7 +387,6 @@ def load_models(context: mx.context.Context,
         inference_model = InferenceModel(config=model_config,
                                          params_fname=params_fname,
                                          context=context,
-                                         beam_size=beam_size,
                                          batch_size=batch_size,
                                          softmax_temperature=softmax_temperature,
                                          decoder_return_logit_inputs=decoder_return_logit_inputs,
@@ -390,7 +398,7 @@ def load_models(context: mx.context.Context,
         models.append(inference_model)
 
     utils.check_condition(vocab.are_identical(*target_vocabs), "Target vocabulary ids do not match")
-    first_model_vocabs = source_vocabs[0]
+
     for fi in range(len(first_model_vocabs)):
         utils.check_condition(vocab.are_identical(*[source_vocabs[i][fi] for i in range(len(source_vocabs))]),
                               "Source vocabulary ids do not match. Factor %d" % fi)
@@ -402,7 +410,7 @@ def load_models(context: mx.context.Context,
     for inference_model in models:
         inference_model.initialize(max_input_len, get_max_output_length)
 
-    return models, source_vocabs[0], target_vocabs[0]
+    return models, target_vocabs[0]
 
 
 def models_max_input_output_length(models: List[InferenceModel],
