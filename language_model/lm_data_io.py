@@ -1,11 +1,11 @@
 import logging
+import math
 import pickle
 import random
 import sys
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Iterable, List, Tuple, Optional, Sized
 
-import math
 import mxnet as mx
 import numpy as np
 
@@ -16,6 +16,7 @@ from sockeye import constants as C
 from sockeye import data_io
 from sockeye import vocab
 from sockeye.utils import check_condition, OnlineMeanAndVariance
+
 
 logger = logging.getLogger(__name__)
 

@@ -12,22 +12,22 @@ import time
 from contextlib import ExitStack
 from typing import cast, List, Optional, Tuple
 
-import mxnet as mx
-import numpy as np
-
 from . import lm_arguments
 from . import lm_common
 from . import lm_data_io
 from .lm_model import TrainingLanguageModel
 from .lm_data_io import BaseMonolingualSampleIter, LMDataConfig, LMDataInfo, lm_get_training_data_iters
 
+import mxnet as mx
+import numpy as np
+
 sys.path.append('../')
 
+from sockeye import constants as C
 from sockeye import config
 from sockeye import loss
 from sockeye import lr_scheduler
 from sockeye import utils
-import sockeye.constants as C
 from sockeye.encoder import EmbeddingConfig
 from sockeye.optimizers import BatchState, CheckpointState, SockeyeOptimizer, OptimizerConfig
 from sockeye.rnn import RNNConfig
@@ -35,6 +35,7 @@ from sockeye.vocab import Vocab, vocab_from_json, vocab_to_json, load_or_create_
 from sockeye.utils import check_condition
 from sockeye.train import check_resume, create_optimizer_config, determine_context, gradient_compression_params
 from sockeye.training import TrainState, Speedometer
+
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +61,7 @@ def lm_create_data_iters_and_vocabs(args: argparse.Namespace,
     batch_num_devices = 1 if args.use_cpu else sum(-di if di < 0 else 1 for di in args.device_ids)
     batch_by_words = args.batch_type == C.BATCH_TYPE_WORD
 
-    # TODO: option arguments/constants should be well-structured
-    train_data_error_msg = "Specify a LM training corpus with training and development data."
+    train_data_error_msg = "Specify a LM training corpus with training and development/validation data."
     check_condition(args.train_data is not None and args.dev_data is not None, train_data_error_msg)
 
     if resume_training:
@@ -97,7 +97,6 @@ def lm_create_data_iters_and_vocabs(args: argparse.Namespace,
     data_info_fname = os.path.join(output_folder, lm_common.LM_DATA_INFO)
     logger.info("[LM] Writing LM data config to '%s'", data_info_fname)
     data_info.save(data_info_fname)
-
     return train_iter, validation_iter, config_data, target_vocab
 
 
@@ -699,7 +698,7 @@ class LMEarlyStoppingTrainer:
             self.optimizer_config.lr_scheduler = pickle.load(fp)
         # initialize optimizer again
         self.model.initialize_optimizer(self.optimizer_config)
-    
+
 
 if __name__ == '__main__':
     args = lm_arguments.create_parser().parse_args()
