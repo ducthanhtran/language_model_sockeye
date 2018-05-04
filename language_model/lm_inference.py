@@ -12,7 +12,7 @@ sys.path.append('../')
 
 import sockeye.constants as C
 from sockeye import utils
-from sockeye.vocab import Vocab, load_source_vocabs, vocab_from_json
+from sockeye.vocab import Vocab, load_source_vocabs, vocab_from_json, are_identical
 
 
 
@@ -268,7 +268,7 @@ def load_models(context: mx.context.Context,
                                          cache_output_layer_w_b=cache_output_layer_w_b)
         models.append(inference_model)
 
-    utils.check_condition(vocab.are_identical(*target_vocabs), "Target vocabulary ids do not match")
+    utils.check_condition(are_identical(*target_vocabs), "Target vocabulary ids do not match")
 
     # set a common max_output length for all models.
     max_input_len, get_max_output_length = models_max_input_output_length(models,
