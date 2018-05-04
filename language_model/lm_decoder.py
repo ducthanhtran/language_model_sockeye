@@ -6,6 +6,7 @@ from . import lm_common
 
 sys.path.append('../')
 
+import sockeye.constants as C
 from sockeye.decoder import Decoder
 from sockeye.rnn import get_stacked_rnn
 
