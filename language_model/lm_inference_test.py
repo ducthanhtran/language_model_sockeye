@@ -11,7 +11,7 @@ BATCH_SIZE = 12
 CONTEXT = mx.cpu()
 
 
-def test_loading():
+def test_loading_models():
     model_hiddenstate_output = lm_inference.load_models(context=CONTEXT,
                                                         max_input_len=MAX_INPUT_LEN,
                                                         batch_size=BATCH_SIZE,
