@@ -5,7 +5,7 @@ import os
 import sys
 import mxnet as mx
 from functools import reduce
-from typing import Any, Dict, List, Tuple, Union, Optional
+from typing import cast, Any, Dict, List, Tuple, Union, Optional
 
 sys.path.append('../')
 
