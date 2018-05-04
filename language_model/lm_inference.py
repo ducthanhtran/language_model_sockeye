@@ -352,13 +352,12 @@ def get_max_input_output_length(supported_max_seq_len_target: Optional[int],
 
 class LMInferer:
     """
-    Uses exactly two inference models, the first one
+    Final wrapper. Uses exactly two inference models, the first one
     using a softmax output and the second model gives
     us the hidden state of the RNN decoder.
     """
     def __init__(self,
                  context: mx.context.Context,
-                 models: Tuple[InferenceModel, InferenceModel],
                  target_vocab) -> None:
         """
         :param context: context for running computation.
@@ -367,8 +366,8 @@ class LMInferer:
         :param target_vocab: target vocabulary
         """
         self.context = context
-        self.models = models
         self.target_vocab = target_vocab
+
 
     def decode_step(self,
                     sequences: mx.nd.NDArray,
