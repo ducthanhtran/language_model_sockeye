@@ -237,14 +237,6 @@ class InferenceModel(SockeyeModel):
         """ If not None this is the maximally supported target length during inference (hard constraint). """
         return self.decoder.get_max_seq_len()
 
-    @property
-    def length_ratio_mean(self) -> float:
-        return self.config.config_data.data_statistics.length_ratio_mean
-
-    @property
-    def length_ratio_std(self) -> float:
-        return self.config.config_data.data_statistics.length_ratio_std
-
 
 def load_models(context: mx.context.Context,
                 max_input_len: Optional[int],
@@ -325,9 +317,6 @@ def models_max_input_output_length(models: List[InferenceModel],
     :param forced_max_input_len: An optional overwrite of the maximum input length.
     :return: The maximum input length and a function to get the output length given the input length.
     """
-    max_mean = max(model.length_ratio_mean for model in models)
-    max_std = max(model.length_ratio_std for model in models)
-
     supported_max_seq_len_target = min((model.max_supported_seq_len_target for model in models
                                         if model.max_supported_seq_len_target is not None),
                                        default=None)
@@ -336,38 +325,24 @@ def models_max_input_output_length(models: List[InferenceModel],
 
     return get_max_input_output_length(supported_max_seq_len_target,
                                        training_max_seq_len_target,
-                                       forced_max_input_len=forced_max_input_len,
-                                       length_ratio_mean=max_mean,
-                                       length_ratio_std=max_std,
-                                       num_stds=num_stds)
+                                       forced_max_input_len=forced_max_input_len)
 
 
     def get_max_input_output_length(supported_max_seq_len_target: Optional[int],
                                     training_max_seq_len_target: Optional[int],
-                                    forced_max_input_len: Optional[int],
-                                    length_ratio_mean: float,
-                                    length_ratio_std: float,
-                                    num_stds: int) -> Tuple[int, Callable]:
+                                    forced_max_input_len: Optional[int]) -> Tuple[int, Callable]:
         """
         Returns a function to compute maximum output length given a fixed number of standard deviations as a
         safety margin, and the current input length. It takes into account optional maximum source and target lengths.
 
         :param supported_max_seq_len_target: The maximum target length supported by the models.
         :param forced_max_input_len: An optional overwrite of the maximum input length.
-        :param length_ratio_mean: The mean of the length ratio that was calculated on the raw sequences with special
-               symbols such as EOS or BOS.
-        :param length_ratio_std: The standard deviation of the length ratio.
-        :param num_stds: The number of standard deviations the target length may exceed the mean target length (as long as
-               the supported maximum length allows for this).
         :return: The maximum input length and a function to get the output length given the input length.
         """
         space_for_bos = 1
         space_for_eos = 1
 
-        if num_stds < 0:
-            factor = C.TARGET_MAX_LENGTH_FACTOR  # type: float
-        else:
-            factor = length_ratio_mean + (length_ratio_std * num_stds)
+        factor = C.TARGET_MAX_LENGTH_FACTOR
 
         if forced_max_input_len is None:
             # Make sure that if there is a hard constraint on the maximum source or target length we never exceed this
