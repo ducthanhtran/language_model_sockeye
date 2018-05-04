@@ -328,46 +328,46 @@ def models_max_input_output_length(models: List[InferenceModel],
                                        forced_max_input_len=forced_max_input_len)
 
 
-    def get_max_input_output_length(supported_max_seq_len_target: Optional[int],
-                                    training_max_seq_len_target: Optional[int],
-                                    forced_max_input_len: Optional[int]) -> Tuple[int, Callable]:
-        """
-        Returns a function to compute maximum output length given a fixed number of standard deviations as a
-        safety margin, and the current input length. It takes into account optional maximum source and target lengths.
+def get_max_input_output_length(supported_max_seq_len_target: Optional[int],
+                                training_max_seq_len_target: Optional[int],
+                                forced_max_input_len: Optional[int]) -> Tuple[int, Callable]:
+    """
+    Returns a function to compute maximum output length given a fixed number of standard deviations as a
+    safety margin, and the current input length. It takes into account optional maximum source and target lengths.
 
-        :param supported_max_seq_len_target: The maximum target length supported by the models.
-        :param forced_max_input_len: An optional overwrite of the maximum input length.
-        :return: The maximum input length and a function to get the output length given the input length.
-        """
-        space_for_bos = 1
-        space_for_eos = 1
+    :param supported_max_seq_len_target: The maximum target length supported by the models.
+    :param forced_max_input_len: An optional overwrite of the maximum input length.
+    :return: The maximum input length and a function to get the output length given the input length.
+    """
+    space_for_bos = 1
+    space_for_eos = 1
 
-        factor = C.TARGET_MAX_LENGTH_FACTOR
+    factor = C.TARGET_MAX_LENGTH_FACTOR
 
-        if forced_max_input_len is None:
-            # Make sure that if there is a hard constraint on the maximum source or target length we never exceed this
-            # constraint. This is for example the case for learned positional embeddings, which are only defined for the
-            # maximum source and target sequence length observed during training.
-            if supported_max_seq_len_target is not None:
-                max_output_len = supported_max_seq_len_target - space_for_bos - space_for_eos
-                if np.ceil(factor * training_max_seq_len_target) > max_output_len:
-                    max_input_len = int(np.floor(max_output_len / factor))
-                else:
-                    max_input_len = training_max_seq_len_target
+    if forced_max_input_len is None:
+        # Make sure that if there is a hard constraint on the maximum source or target length we never exceed this
+        # constraint. This is for example the case for learned positional embeddings, which are only defined for the
+        # maximum source and target sequence length observed during training.
+        if supported_max_seq_len_target is not None:
+            max_output_len = supported_max_seq_len_target - space_for_bos - space_for_eos
+            if np.ceil(factor * training_max_seq_len_target) > max_output_len:
+                max_input_len = int(np.floor(max_output_len / factor))
             else:
-                # we use the maximum length from training.
                 max_input_len = training_max_seq_len_target
         else:
-            max_input_len = forced_max_input_len
+            # we use the maximum length from training.
+            max_input_len = training_max_seq_len_target
+    else:
+        max_input_len = forced_max_input_len
 
-        def get_max_output_length(input_length: int):
-            """
-            Returns the maximum output length for inference given the input length.
-            Explicitly includes space for BOS and EOS sentence symbols in the target sequence, because we assume
-            that the mean length ratio computed on the training data do not include these special symbols.
-            (see data_io.analyze_sequence_lengths)
-            """
+    def get_max_output_length(input_length: int):
+        """
+        Returns the maximum output length for inference given the input length.
+        Explicitly includes space for BOS and EOS sentence symbols in the target sequence, because we assume
+        that the mean length ratio computed on the training data do not include these special symbols.
+        (see data_io.analyze_sequence_lengths)
+        """
 
-            return int(np.ceil(factor * input_length)) + space_for_bos + space_for_eos
+        return int(np.ceil(factor * input_length)) + space_for_bos + space_for_eos
 
-        return max_input_len, get_max_output_length
+    return max_input_len, get_max_output_length
