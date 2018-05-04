@@ -12,7 +12,6 @@ from . import lm_model
 sys.path.append('../')
 
 import sockeye.constants as C
-from sockeye.model import SockeyeModel
 from sockeye.vocab import Vocab, load_source_vocabs, vocab_from_json
 
 
@@ -30,7 +29,7 @@ class ModelState:
         self.states = [mx.nd.take(ds, best_hyp_indices) for ds in self.states]
 
 
-class InferenceModel(SockeyeModel):
+class InferenceModel(lm_model.LanguageModel):
     """
     InferenceModel is a SockeyeModel that supports three operations used for inference/decoding:
 
@@ -130,26 +129,23 @@ class InferenceModel(SockeyeModel):
             Returns either softmax output (probs over target vocabulary) or inputs to logit
             computation, controlled by decoder_return_logit_inputs
             """
-            source_seq_len, decode_step = bucket_key
-            source_embed_seq_len = self.embedding_source.get_encoded_seq_len(source_seq_len)
-            source_encoded_seq_len = self.encoder.get_encoded_seq_len(source_embed_seq_len)
+            decode_step = bucket_key
 
             self.decoder.reset()
             target_prev = mx.sym.Variable(C.TARGET_NAME)
+            # TODO: state_variables method has to be implemented in lm_decoder.py
             states = self.decoder.state_variables(decode_step)
             state_names = [state.name for state in states]
 
             # embedding for previous word
             # (batch_size, num_embed)
-            target_embed_prev, _, _ = self.embedding_target.encode(data=target_prev, data_length=None, seq_len=1)
+            target_embed_prev, _, _ = self.embedding.encode(data=target_prev, data_length=None, seq_len=1)
 
             # decoder
             # target_decoded: (batch_size, decoder_depth)
             (target_decoded,
-             attention_probs,
              states) = self.decoder.decode_step(decode_step,
                                                 target_embed_prev,
-                                                source_encoded_seq_len,
                                                 *states)
 
             if self.decoder_return_logit_inputs:
@@ -164,7 +160,7 @@ class InferenceModel(SockeyeModel):
 
             data_names = [C.TARGET_NAME] + state_names
             label_names = []  # type: List[str]
-            return mx.sym.Group([outputs, attention_probs] + states), data_names, label_names
+            return mx.sym.Group([outputs] + states), data_names, label_names
 
         # pylint: disable=not-callable
         default_bucket_key = (self.max_input_length, self.get_max_output_length(self.max_input_length))
@@ -182,6 +178,7 @@ class InferenceModel(SockeyeModel):
         :return: List of data descriptions.
         """
         source_max_length, target_max_length = bucket_key
+        # TODO: state_shapes method has to be implemented in lm_decoder.py
         return self.decoder_data_shapes_cache.setdefault(
             bucket_key,
             [mx.io.DataDesc(name=C.TARGET_NAME, shape=(self.batch_size * self.beam_size,), layout="NT")] +
@@ -205,8 +202,8 @@ class InferenceModel(SockeyeModel):
             bucket_key=bucket_key,
             provide_data=self._get_decoder_data_shapes(bucket_key))
         self.decoder_module.forward(data_batch=batch, is_train=False)
-        out, attention_probs, *model_state.states = self.decoder_module.get_outputs()
-        return out, attention_probs, model_state
+        out, *model_state.states = self.decoder_module.get_outputs()
+        return out, model_state
 
     @property
     def training_max_seq_len_target(self) -> int:
