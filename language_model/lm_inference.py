@@ -82,16 +82,9 @@ class InferenceModel(SockeyeModel):
         :param get_max_output_length_function: Callable to compute maximum output length.
         """
         self.max_input_length = max_input_length
-        if self.max_input_length > self.training_max_seq_len_source:
-            logger.warning("Model was only trained with sentences up to a length of %d, "
-                           "but a max_input_len of %d is used.",
-                           self.training_max_seq_len_source, self.max_input_length)
         self.get_max_output_length = get_max_output_length_function
 
-        # check the maximum supported length of the encoder & decoder:
-        if self.max_supported_seq_len_source is not None:
-            utils.check_condition(self.max_input_length <= self.max_supported_seq_len_source,
-                                  "Encoder only supports a maximum length of %d" % self.max_supported_seq_len_source)
+        # check the maximum supported length of the decoder:
         if self.max_supported_seq_len_target is not None:
             decoder_max_len = self.get_max_output_length(max_input_length)
             utils.check_condition(decoder_max_len <= self.max_supported_seq_len_target,
