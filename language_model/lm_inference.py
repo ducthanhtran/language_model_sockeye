@@ -1,6 +1,6 @@
 import os
 import sys
-from typing import List, Tuple, Optional
+from typing import Callable, List, Tuple, Optional
 
 import mxnet as mx
 import numpy as np
