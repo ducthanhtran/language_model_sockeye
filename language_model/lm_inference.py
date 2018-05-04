@@ -349,3 +349,49 @@ def get_max_input_output_length(supported_max_seq_len_target: Optional[int],
         return int(np.ceil(factor * input_length)) + space_for_bos + space_for_eos
 
     return max_input_len, get_max_output_length
+
+
+class LMInferer:
+    """
+    Uses exactly two inference models, the first one
+    using a softmax output and the second model gives
+    us the hidden state of the RNN decoder.
+    """
+    def __init__(self,
+                 context: mx.context.Context,
+                 models: Tuple[InferenceModel, InferenceModel],
+                 target_vocab) -> None:
+        """
+        :param context: context for running computation.
+        :param models: exactly two inference models, the first one gives us the softmax output and the second model
+                       returns the hidden state from the RNN decoder.
+        :param target_vocab: target vocabulary
+        """
+        self.context = context
+        self.models = models
+        self.target_vocab = target_vocab
+
+    def decode_step(self,
+                    sequences: mx.nd.NDArray,
+                    step: int,
+                    states: Tuple[ModelState, ModelState]) -> Tuple[mx.nd.NDArray, List[ModelState]]:
+        """
+        Computes softmax and hidden state output given the previous word and previous hidden states. The new hidden state is simply appended to the states-list.
+
+        :param sequences: sequences of current output hypotheses. Shape: (batch_size, max_output_length).
+        :param step: current timestep
+        :param states: exactly two ModelStates for each inference model
+        """
+        bucket_key = (source_length, step) # TODO: target length?
+        prev_word = sequences[:, step-1]
+
+        outputs = []
+        model_states = []
+
+        for model, state in zip(self.models, states):
+            decoder_output, model_state_hidden = model.run_decoder(prev_word, bucket_key, state)
+            outputs.append(decoder_output)
+            model_states.append(model_state_hidden)
+
+        # first model responsible for softmax and second for hidden state output
+        return outputs[0], model_states[1][0]
