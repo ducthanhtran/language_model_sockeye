@@ -105,8 +105,9 @@ class LanguageModelDecoder(Decoder):
         :param target_max_length: Current target sequence lengths.
         :return: List of symbolic variables.
         """
-        # TODO: implement this for inference!
-        pass
+        return [mx.sym.Variable(C.HIDDEN_PREVIOUS_NAME)] + \
+               [mx.sym.Variable("%senc2decinit_%d" % (self.prefix, i)) for i in
+                range(len(sum([rnn.state_info for rnn in self.get_rnn_cells()], [])))]
 
     def state_shapes(self,
                      batch_size: int,
