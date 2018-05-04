@@ -8,11 +8,12 @@ import numpy as np
 from . import lm_common
 from . import lm_model
 
-
 sys.path.append('../')
 
 import sockeye.constants as C
+from sockeye import utils
 from sockeye.vocab import Vocab, load_source_vocabs, vocab_from_json
+
 
 
 class ModelState:
