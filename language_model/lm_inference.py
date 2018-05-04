@@ -76,15 +76,6 @@ class InferenceModel(SockeyeModel):
         self.output_layer_w = None  # type: Optional[mx.nd.NDArray]
         self.output_layer_b = None  # type: Optional[mx.nd.NDArray]
 
-
-    ## NOTE: might be removable
-    @property
-    def num_source_factors(self) -> int:
-        """
-        Returns the number of source factors of this InferenceModel (at least 1).
-        """
-        return self.config.config_data.num_source_factors
-
     def initialize(self, max_input_length: int, get_max_output_length_function: Callable):
         """
         Delayed construction of modules to ensure multiple Inference models can agree on computing a common
