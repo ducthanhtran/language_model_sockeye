@@ -207,7 +207,7 @@ class InferenceModel(lm_model.LanguageModel):
     @property
     def training_max_seq_len_target(self) -> int:
         """ The maximum sequence length on the target side during training. """
-        return self.config.config_data.data_statistics.max_observed_len_target
+        return self.config.max_seq_len_target
 
     @property
     def max_supported_seq_len_target(self) -> Optional[int]:
