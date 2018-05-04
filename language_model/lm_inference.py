@@ -15,10 +15,6 @@ from sockeye.model import SockeyeModel
 from sockeye.vocab import Vocab, load_source_vocabs, vocab_from_json
 
 
-BeamHistory = Dict[str, List]
-Tokens = List[str]
-
-
 class ModelState:
     """
     A ModelState encapsulates information about the decoder states of an InferenceModel.
