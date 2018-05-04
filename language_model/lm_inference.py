@@ -3,6 +3,7 @@ import sys
 from typing import List, Tuple, Optional
 
 import mxnet as mx
+import numpy as np
 
 from . import lm_common
 from . import lm_model
