@@ -133,7 +133,6 @@ class InferenceModel(lm_model.LanguageModel):
 
             self.decoder.reset()
             target_prev = mx.sym.Variable(C.TARGET_NAME)
-            # TODO: state_variables method has to be implemented in lm_decoder.py
             states = self.decoder.state_variables(decode_step)
             state_names = [state.name for state in states]
 
