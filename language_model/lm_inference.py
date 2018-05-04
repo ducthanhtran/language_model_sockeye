@@ -251,7 +251,7 @@ def load_models(context: mx.context.Context,
 
     for model_folder, checkpoint in zip(model_folders, checkpoints):
         target_vocabs.append(vocab_from_json(os.path.join(model_folder, lm_common.LM_PREFIX + lm_common.LM_VOCAB_NAME)))
-        model_config = lm_model.load_config(os.path.join(model_folder, lm_common.LM_PREFIX + C.CONFIG_NAME))
+        model_config = lm_model.LanguageModel.load_config(os.path.join(model_folder, lm_common.LM_PREFIX + C.CONFIG_NAME))
 
         if checkpoint is None:
             params_fname = os.path.join(model_folder, C.PARAMS_BEST_NAME)
