@@ -112,17 +112,13 @@ class LanguageModelDecoder(Decoder):
 
     def state_shapes(self,
                      batch_size: int,
-                     target_max_length: int,
-                     source_encoded_max_length: int,
-                     source_encoded_depth: int) -> List[mx.io.DataDesc]:
+                     target_max_length: int) -> List[mx.io.DataDesc]:
         """
-        Returns a list of shape descriptions given batch size, encoded source max length and encoded source depth.
+        Returns a list of shape descriptions given batch size.
         Used for inference.
 
         :param batch_size: Batch size during inference.
         :param target_max_length: Current target sequence length.
-        :param source_encoded_max_length: Size of encoder time dimension.
-        :param source_encoded_depth: Depth of encoded source.
         :return: List of shape descriptions.
         """
         # TODO: implement this for inference!

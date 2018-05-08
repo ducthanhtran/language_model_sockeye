@@ -53,7 +53,6 @@ class InferenceModel(lm_model.LanguageModel):
                  context: mx.context.Context,
                  batch_size: int,
                  softmax_temperature: Optional[float] = None,
-                 max_output_length_num_stds: int = C.DEFAULT_NUM_STD_MAX_OUTPUT_LENGTH,
                  decoder_return_logit_inputs: bool = False,
                  cache_output_layer_w_b: bool = False) -> None:
         super().__init__(config)
@@ -61,8 +60,6 @@ class InferenceModel(lm_model.LanguageModel):
         self.context = context
         self.batch_size = batch_size
         self.softmax_temperature = softmax_temperature
-        self.max_input_length, self.get_max_output_length = models_max_input_output_length([self],
-                                                                                           max_output_length_num_stds)
 
         self.decoder_module = None  # type: Optional[mx.mod.BucketingModule]
         self.decoder_default_bucket_key = None  # type: Optional[int]
@@ -73,26 +70,16 @@ class InferenceModel(lm_model.LanguageModel):
         self.output_layer_w = None  # type: Optional[mx.nd.NDArray]
         self.output_layer_b = None  # type: Optional[mx.nd.NDArray]
 
-    def initialize(self, max_input_length: int, get_max_output_length_function: Callable):
+    def initialize(self, max_output_len: int):
         """
-        Delayed construction of modules to ensure multiple Inference models can agree on computing a common
+        Delayed construction of module.
+        Originally to ensure multiple Inference models can agree on computing a common
         maximum output length.
 
-        :param max_input_length: Maximum input length.
-        :param get_max_output_length_function: Callable to compute maximum output length.
+        :param max_output_len: Maximum output length.
         """
-        self.max_input_length = max_input_length
-        self.get_max_output_length = get_max_output_length_function
 
-        # check the maximum supported length of the decoder:
-        if self.max_supported_seq_len_target is not None:
-            decoder_max_len = self.get_max_output_length(max_input_length)
-            utils.check_condition(decoder_max_len <= self.max_supported_seq_len_target,
-                                  "Decoder only supports a maximum length of %d, but %d was requested. Note that the "
-                                  "maximum output length depends on the input length and the source/target length "
-                                  "ratio observed during training." % (self.max_supported_seq_len_target,
-                                                                       decoder_max_len))
-
+        self.max_output_len = max_output_len
         self.decoder_module, self.decoder_default_bucket_key = self._get_decoder_module()
 
         self.decoder_data_shapes_cache = dict()  # bucket_key -> shape cache
@@ -161,7 +148,7 @@ class InferenceModel(lm_model.LanguageModel):
             return mx.sym.Group([outputs] + states), data_names, label_names
 
         # pylint: disable=not-callable
-        default_bucket_key = (self.max_input_length, self.get_max_output_length(self.max_input_length))
+        default_bucket_key = self.max_output_len
         module = mx.mod.BucketingModule(sym_gen=sym_gen,
                                         default_bucket_key=default_bucket_key,
                                         context=self.context)
@@ -212,7 +199,7 @@ class InferenceModel(lm_model.LanguageModel):
 
 
 def load_models(context: mx.context.Context,
-                max_input_len: Optional[int],
+                max_output_len: Optional[int],
                 batch_size: int,
                 model_folders: List[str],
                 checkpoints: Optional[List[int]] = None,
@@ -275,75 +262,11 @@ def load_models(context: mx.context.Context,
     return models, target_vocabs[0]
 
 
-def models_max_input_output_length(models: List[InferenceModel],
-                                   num_stds: int,
-                                   forced_max_input_len: Optional[int] = None) -> Tuple[int, Callable]:
-    """
-    Returns a function to compute maximum output length given a fixed number of standard deviations as a
-    safety margin, and the current input length.
-    Mean and std are taken from the model with the largest values to allow proper ensembling of models
-    trained on different data sets.
-
-    :param models: List of models.
-    :param num_stds: Number of standard deviations to add as a safety margin. If -1, returned maximum output lengths
-                     will always be 2 * input_length.
-    :param forced_max_input_len: An optional overwrite of the maximum input length.
-    :return: The maximum input length and a function to get the output length given the input length.
-    """
-    supported_max_seq_len_target = min((model.max_supported_seq_len_target for model in models
-                                        if model.max_supported_seq_len_target is not None),
-                                       default=None)
-
-    training_max_seq_len_target = min(model.training_max_seq_len_target for model in models)
-
-    return get_max_input_output_length(supported_max_seq_len_target,
-                                       training_max_seq_len_target,
-                                       forced_max_input_len=forced_max_input_len)
-
-
-def get_max_input_output_length(supported_max_seq_len_target: Optional[int],
-                                training_max_seq_len_target: Optional[int],
-                                forced_max_input_len: Optional[int]) -> Tuple[int, Callable]:
-    """
-    Returns a function to compute maximum output length given a fixed number of standard deviations as a
-    safety margin, and the current input length. It takes into account optional maximum source and target lengths.
-
-    :param supported_max_seq_len_target: The maximum target length supported by the models.
-    :param forced_max_input_len: An optional overwrite of the maximum input length.
-    :return: The maximum input length and a function to get the output length given the input length.
-    """
-    space_for_bos = 1
-    space_for_eos = 1
-
-    factor = C.TARGET_MAX_LENGTH_FACTOR
-
-    if forced_max_input_len is None:
-        # Make sure that if there is a hard constraint on the maximum source or target length we never exceed this
-        # constraint. This is for example the case for learned positional embeddings, which are only defined for the
-        # maximum source and target sequence length observed during training.
-        if supported_max_seq_len_target is not None:
-            max_output_len = supported_max_seq_len_target - space_for_bos - space_for_eos
-            if np.ceil(factor * training_max_seq_len_target) > max_output_len:
-                max_input_len = int(np.floor(max_output_len / factor))
-            else:
-                max_input_len = training_max_seq_len_target
-        else:
-            # we use the maximum length from training.
-            max_input_len = training_max_seq_len_target
     else:
         max_input_len = forced_max_input_len
 
-    def get_max_output_length(input_length: int):
-        """
-        Returns the maximum output length for inference given the input length.
-        Explicitly includes space for BOS and EOS sentence symbols in the target sequence, because we assume
-        that the mean length ratio computed on the training data do not include these special symbols.
-        (see data_io.analyze_sequence_lengths)
-        """
 
-        return int(np.ceil(factor * input_length)) + space_for_bos + space_for_eos
 
-    return max_input_len, get_max_output_length
 
 
 class LMInferer:
