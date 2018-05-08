@@ -201,72 +201,47 @@ class InferenceModel(lm_model.LanguageModel):
 def load_models(context: mx.context.Context,
                 max_output_len: Optional[int],
                 batch_size: int,
-                model_folders: List[str],
-                checkpoints: Optional[List[int]] = None,
+                model_folder: List[str],
+                checkpoint: Optional[int] = None,
                 softmax_temperature: Optional[float] = None,
-                max_output_length_num_stds: int = C.DEFAULT_NUM_STD_MAX_OUTPUT_LENGTH,
                 decoder_return_logit_inputs: bool = False,
                 cache_output_layer_w_b: bool = False) -> Tuple[List[InferenceModel],
                                                                Vocab]:
     """
-    Loads a list of models for inference.
+    Loads a model for inference.
 
     :param context: MXNet context to bind modules to.
     :param max_input_len: Maximum input length.
     :param batch_size: Batch size.
     :param model_folders: List of model folders to load models from.
-    :param checkpoints: List of checkpoints to use for each model in model_folders. Use None to load best checkpoint.
+    :param checkpoint: Checkpoint to use for each model in model_folders. Use None to load best checkpoint.
     :param softmax_temperature: Optional parameter to control steepness of softmax distribution.
-    :param max_output_length_num_stds: Number of standard deviations to add to mean target-source length ratio
-           to compute maximum output length.
     :param decoder_return_logit_inputs: Model decoders return inputs to logit computation instead of softmax over target
                                         vocabulary.  Used when logits/softmax are handled separately.
     :param cache_output_layer_w_b: Models cache weights and biases for logit computation as NumPy arrays (used with
                                    restrict lexicon).
-    :return: List of models, source vocabulary, target vocabulary, source factor vocabularies.
+    :return: Model, target vocabulary.
     """
-    models = []  # type: List[InferenceModel]
 
-    target_vocabs = []  # type: List[vocab.Vocab]
+    target_vocab = vocab_from_json(os.path.join(model_folder, lm_common.LM_PREFIX + lm_common.LM_VOCAB_NAME))
+    model_config = lm_model.LanguageModel.load_config(os.path.join(model_folder, lm_common.LM_PREFIX + C.CONFIG_NAME))
 
-    if checkpoints is None:
-        checkpoints = [None] * len(model_folders)
-
-    for model_folder, checkpoint in zip(model_folders, checkpoints):
-        target_vocabs.append(vocab_from_json(os.path.join(model_folder, lm_common.LM_PREFIX + lm_common.LM_VOCAB_NAME)))
-        model_config = lm_model.LanguageModel.load_config(os.path.join(model_folder, lm_common.LM_PREFIX + C.CONFIG_NAME))
-
-        if checkpoint is None:
-            params_fname = os.path.join(model_folder, C.PARAMS_BEST_NAME)
-        else:
-            params_fname = os.path.join(model_folder, C.PARAMS_NAME % checkpoint)
-
-        inference_model = InferenceModel(config=model_config,
-                                         params_fname=params_fname,
-                                         context=context,
-                                         batch_size=batch_size,
-                                         softmax_temperature=softmax_temperature,
-                                         decoder_return_logit_inputs=decoder_return_logit_inputs,
-                                         cache_output_layer_w_b=cache_output_layer_w_b)
-        models.append(inference_model)
-
-    utils.check_condition(are_identical(*target_vocabs), "Target vocabulary ids do not match")
-
-    # set a common max_output length for all models.
-    max_input_len, get_max_output_length = models_max_input_output_length(models,
-                                                                          max_output_length_num_stds,
-                                                                          max_input_len)
-    for inference_model in models:
-        inference_model.initialize(max_input_len, get_max_output_length)
-
-    return models, target_vocabs[0]
-
-
+    if checkpoint is None:
+        params_fname = os.path.join(model_folder, C.PARAMS_BEST_NAME)
     else:
-        max_input_len = forced_max_input_len
+        params_fname = os.path.join(model_folder, C.PARAMS_NAME % checkpoint)
 
+    inference_model = InferenceModel(config=model_config,
+                                     params_fname=params_fname,
+                                     context=context,
+                                     batch_size=batch_size,
+                                     softmax_temperature=softmax_temperature,
+                                     decoder_return_logit_inputs=decoder_return_logit_inputs,
+                                     cache_output_layer_w_b=cache_output_layer_w_b)
 
+    inference_model.initialize(max_output_len)
 
+    return inference_model, target_vocab
 
 
 class LMInferer:
