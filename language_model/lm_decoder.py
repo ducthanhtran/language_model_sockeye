@@ -121,8 +121,14 @@ class LanguageModelDecoder(Decoder):
         :param target_max_length: Current target sequence length.
         :return: List of shape descriptions.
         """
-        # TODO: implement this for inference!
-        pass
+        return [mx.io.DataDesc(C.HIDDEN_PREVIOUS_NAME,
+                               (batch_size, self.num_hidden),
+                               layout="NC")] + \
+               [mx.io.DataDesc("%senc2decinit_%d" % (self.prefix, i),
+                               (batch_size, num_hidden),
+                               layout=C.BATCH_MAJOR) for i, (_, num_hidden) in enumerate(
+                   sum([rnn.state_shape for rnn in self.get_rnn_cells()], [])
+               )]
 
     def get_rnn_cells(self) -> List[mx.rnn.BaseRNNCell]:
         return [self.stacked_rnn]
