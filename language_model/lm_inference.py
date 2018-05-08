@@ -65,7 +65,7 @@ class InferenceModel(lm_model.LanguageModel):
                                                                                            max_output_length_num_stds)
 
         self.decoder_module = None  # type: Optional[mx.mod.BucketingModule]
-        self.decoder_default_bucket_key = None  # type: Optional[Tuple[int, int]]
+        self.decoder_default_bucket_key = None  # type: Optional[int]
         self.decoder_data_shapes_cache = None  # type: Optional[Dict]
         self.decoder_return_logit_inputs = decoder_return_logit_inputs
 
@@ -113,19 +113,17 @@ class InferenceModel(lm_model.LanguageModel):
                 self.output_layer_w = self.params[self.output_layer.w.name].as_in_context(self.context)
             self.output_layer_b = self.params[self.output_layer.b.name].as_in_context(self.context)
 
-    def _get_decoder_module(self) -> Tuple[mx.mod.BucketingModule, Tuple[int, int]]:
+    def _get_decoder_module(self) -> Tuple[mx.mod.BucketingModule, int]:
         """
         Returns a BucketingModule for a single decoder step.
         Given previously predicted word and previous decoder states, it returns
         a distribution over the next predicted word and the next decoder states.
-        The bucket key for this module is the length of the source sequence
-        and the current time-step in the inference procedure (e.g. beam search).
-        The latter corresponds to the current length of the target sequences.
+        The bucket key for this module is the current length of the target sequences.
 
         :return: Tuple of decoder module and default bucket key.
         """
 
-        def sym_gen(bucket_key: Tuple[int, int]):
+        def sym_gen(bucket_key: int):
             """
             Returns either softmax output (probs over target vocabulary) or inputs to logit
             computation, controlled by decoder_return_logit_inputs
@@ -169,7 +167,7 @@ class InferenceModel(lm_model.LanguageModel):
                                         context=self.context)
         return module, default_bucket_key
 
-    def _get_decoder_data_shapes(self, bucket_key: Tuple[int, int]) -> List[mx.io.DataDesc]:
+    def _get_decoder_data_shapes(self, bucket_key: int) -> List[mx.io.DataDesc]:
         """
         Returns data shapes of the decoder module.
         Caches results for bucket_keys if called iteratively.
@@ -177,15 +175,12 @@ class InferenceModel(lm_model.LanguageModel):
         :param bucket_key: Tuple of (maximum input length, maximum target length).
         :return: List of data descriptions.
         """
-        source_max_length, target_max_length = bucket_key
-        # TODO: state_shapes method has to be implemented in lm_decoder.py
+        target_max_length = bucket_key
         return self.decoder_data_shapes_cache.setdefault(
             bucket_key,
-            [mx.io.DataDesc(name=C.TARGET_NAME, shape=(self.batch_size * self.beam_size,), layout="NT")] +
-            self.decoder.state_shapes(self.batch_size * self.beam_size,
-                                      target_max_length,
-                                      self.encoder.get_encoded_seq_len(source_max_length),
-                                      self.encoder.get_num_hidden()))
+            [mx.io.DataDesc(name=C.TARGET_NAME, shape=(self.batch_size,), layout="NT")] +
+            self.decoder.state_shapes(self.batch_size,
+                                      target_max_length))
 
     def run_decoder(self,
                     prev_word: mx.nd.NDArray,
