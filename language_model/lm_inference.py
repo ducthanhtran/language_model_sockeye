@@ -145,7 +145,7 @@ class InferenceModel(lm_model.LanguageModel):
 
             data_names = [C.TARGET_NAME] + state_names
             label_names = []  # type: List[str]
-            return mx.sym.Group([outputs] + states), data_names, label_names
+            return outputs, data_names, label_names
 
         # pylint: disable=not-callable
         default_bucket_key = self.max_output_len
