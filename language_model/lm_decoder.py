@@ -56,14 +56,14 @@ class LanguageModelDecoder(Decoder):
     def decode_step(self,
                     step: int,
                     target_embed_prev: mx.sym.Symbol,
-                    *states: mx.sym.Symbol) -> Tuple[mx.sym.Symbol, mx.sym.Symbol, List[mx.sym.Symbol]]:
+                    *states: mx.sym.Symbol) -> Tuple[mx.sym.Symbol, List[mx.sym.Symbol]]:
         prev_hidden, *layer_states = states
 
         prev_state = RecurrentDecoderState(prev_hidden, list(layer_states))
 
         # state.hidden: (batch_size, rnn_num_hidden)
         state = self._step(target_embed_prev, prev_state)
-        return state.hidden, [state.hidden, state.layer_states]
+        return state.hidden, [state.hidden] + state.layer_states
 
     def get_initial_state(self,
                           target_embed_lengths: mx.sym.Symbol) -> RecurrentDecoderState:
