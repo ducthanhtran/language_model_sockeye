@@ -268,29 +268,6 @@ class LMInferer:
     def decode_step(self,
                     lm_states: ModelState,
                     prev_word: mx.nd.NDArray) -> Tuple[Union[mx.nd.NDArray, ModelState]]:
-        pass
-    # NOTE: old code with two inference models
-    # def decode_step(self,
-    #                 sequences: mx.nd.NDArray,
-    #                 step: int,
-    #                 states: Tuple[ModelState, ModelState]) -> Tuple[mx.nd.NDArray, List[ModelState]]:
-    #     """
-    #     Computes softmax and hidden state output given the previous word and previous hidden states. The new hidden state is simply appended to the states-list.
-    #
-    #     :param sequences: sequences of current output hypotheses. Shape: (batch_size, max_output_length).
-    #     :param step: current timestep
-    #     :param states: exactly two ModelStates for each inference model
-    #     """
-    #     bucket_key = (source_length, step) # TODO: target length?
-    #     prev_word = sequences[:, step-1]
-    #
-    #     outputs = []
-    #     model_states = []
-    #
-    #     for model, state in zip(self.models, states):
-    #         decoder_output, model_state_hidden = model.run_decoder(prev_word, bucket_key, state)
-    #         outputs.append(decoder_output)
-    #         model_states.append(model_state_hidden)
-    #
-    #     # first model responsible for softmax and second for hidden state output
-    #     return outputs[0], model_states[1][0]
+        key = self.model.training_max_seq_len_target
+        output, updated_lm_states = self.model.run_decoder(prev_word, key, lm_states)
+        return output, updated_lm_states
