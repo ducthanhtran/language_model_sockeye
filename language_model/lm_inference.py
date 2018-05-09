@@ -198,7 +198,7 @@ class InferenceModel(lm_model.LanguageModel):
         return self.decoder.get_max_seq_len()
 
 
-def load_models(context: mx.context.Context,
+def load_model(context: mx.context.Context,
                 max_output_len: Optional[int],
                 batch_size: int,
                 model_folder: List[str],
@@ -252,15 +252,18 @@ class LMInferer:
     """
     def __init__(self,
                  context: mx.context.Context,
-                 target_vocab) -> None:
+                 max_output_len: Optional[int],
+                 batch_size: int,
+                 model_folder: str,
+                 checkpoint: Optional[int] = None,
+                 softmax_temperature: Optional[float] = None,
+                 decoder_return_logit_inputs: bool = False,
+                 cache_output_layer_w_b: bool = False) -> None:
         """
-        :param context: context for running computation.
-        :param models: exactly two inference models, the first one gives us the softmax output and the second model
-                       returns the hidden state from the RNN decoder.
-        :param target_vocab: target vocabulary
+        :param decoder_return_logit_inputs: If set to true we obtain hidden state outputs. Otherwise a softmax vector
+                                            is returned by the inference model.
         """
-        self.context = context
-        self.target_vocab = target_vocab
+        self.model, self.vocab = load_model(context, max_output_len, batch_size, model_folder, checkpoint, softmax_temperature, decoder_return_logit_inputs, cache_output_layer_w_b)
 
 
     def decode_step(self,

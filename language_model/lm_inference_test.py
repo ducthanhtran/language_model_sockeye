@@ -12,13 +12,13 @@ CONTEXT = mx.cpu()
 
 
 def test_loading_models():
-    model_hiddenstate_output = lm_inference.load_models(context=CONTEXT,
+    model_hiddenstate_output = lm_inference.load_model(context=CONTEXT,
                                                         max_output_len=MAX_OUTPUT_LEN,
                                                         batch_size=BATCH_SIZE,
                                                         model_folder=SWITCHBOARD_PATH,
                                                         decoder_return_logit_inputs=True)
 
-    model_softmax_output = lm_inference.load_models(context=CONTEXT,
+    model_softmax_output = lm_inference.load_model(context=CONTEXT,
                                                     max_output_len=MAX_OUTPUT_LEN,
                                                     batch_size=BATCH_SIZE,
                                                     model_folder=SWITCHBOARD_PATH,
