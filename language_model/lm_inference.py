@@ -171,7 +171,7 @@ class InferenceModel(lm_model.LanguageModel):
 
     def run_decoder(self,
                     prev_word: mx.nd.NDArray,
-                    bucket_key: Tuple[int, int],
+                    bucket_key: int,
                     model_state: 'ModelState') -> Tuple[mx.nd.NDArray, mx.nd.NDArray, 'ModelState']:
         """
         Runs forward pass of the single-step decoder.
