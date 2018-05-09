@@ -1,6 +1,6 @@
 import os
 import sys
-from typing import Callable, List, Tuple, Optional
+from typing import Callable, List, Tuple, Union, Optional
 
 import mxnet as mx
 import numpy as np
@@ -267,7 +267,16 @@ class LMInferer:
 
     def decode_step(self,
                     lm_states: ModelState,
-                    prev_word: mx.nd.NDArray) -> Tuple[Union[mx.nd.NDArray, ModelState]]:
-        key = self.model.training_max_seq_len_target
-        output, updated_lm_states = self.model.run_decoder(prev_word, key, lm_states)
+                    sentence: mx.nd.NDArray,
+                    step: int) -> Tuple[Union[mx.nd.NDArray, ModelState]]:
+        """
+        :param sentence: single array of integers denoting a sentence string
+        :param step: current step of predicting a word. The previous word is located at position step-1 of
+                     sentence.
+        :return: output
+        """
+        prev_word = sentence[step-1]
+        output, updated_lm_states = self.model.run_decoder(prev_word=prev_word,
+                                                           bucket_key=step,
+                                                           model_state=lm_states)
         return output, updated_lm_states
