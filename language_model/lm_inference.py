@@ -205,7 +205,7 @@ def load_models(context: mx.context.Context,
                 checkpoint: Optional[int] = None,
                 softmax_temperature: Optional[float] = None,
                 decoder_return_logit_inputs: bool = False,
-                cache_output_layer_w_b: bool = False) -> Tuple[List[InferenceModel],
+                cache_output_layer_w_b: bool = False) -> Tuple[InferenceModel,
                                                                Vocab]:
     """
     Loads a model for inference.
