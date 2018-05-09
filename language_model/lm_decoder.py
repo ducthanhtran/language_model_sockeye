@@ -112,21 +112,23 @@ class LanguageModelDecoder(Decoder):
 
     def state_shapes(self,
                      batch_size: int,
-                     target_max_length: int,
-                     source_encoded_max_length: int,
-                     source_encoded_depth: int) -> List[mx.io.DataDesc]:
+                     target_max_length: int) -> List[mx.io.DataDesc]:
         """
-        Returns a list of shape descriptions given batch size, encoded source max length and encoded source depth.
+        Returns a list of shape descriptions given batch size.
         Used for inference.
 
         :param batch_size: Batch size during inference.
         :param target_max_length: Current target sequence length.
-        :param source_encoded_max_length: Size of encoder time dimension.
-        :param source_encoded_depth: Depth of encoded source.
         :return: List of shape descriptions.
         """
-        # TODO: implement this for inference!
-        pass
+        return [mx.io.DataDesc(C.HIDDEN_PREVIOUS_NAME,
+                               (batch_size, self.num_hidden),
+                               layout="NC")] + \
+               [mx.io.DataDesc("%senc2decinit_%d" % (self.prefix, i),
+                               (batch_size, num_hidden),
+                               layout=C.BATCH_MAJOR) for i, (_, num_hidden) in enumerate(
+                   sum([rnn.state_shape for rnn in self.get_rnn_cells()], [])
+               )]
 
     def get_rnn_cells(self) -> List[mx.rnn.BaseRNNCell]:
         return [self.stacked_rnn]
