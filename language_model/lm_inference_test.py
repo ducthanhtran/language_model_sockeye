@@ -39,8 +39,8 @@ def test_inference_softmax():
                                      batch_size=BATCH_SIZE,
                                      model_folder=SWITCHBOARD_PATH)
 
-    zero_vector = mx.nd.ones((1,HIDDEN_UNITS)) # same dimensionality as hidden units used during training, i.e. 1024
-    lm_state = lm_inference.ModelState([zero_vector])
+    zero_vector = mx.nd.zeros((1,HIDDEN_UNITS)) # same dimensionality as hidden units used during training, i.e. 1024
+    lm_state = lm_inference.ModelState([zero_vector, zero_vector])
 
     def sentence_assertions_softmax(inferer, sentence, step):
         out, updated_lm_states = inferer.decode_step(lm_states=lm_state,
@@ -66,8 +66,8 @@ def test_inference_hiddenstate():
                                      model_folder=SWITCHBOARD_PATH,
                                      decoder_return_logit_inputs=True)
 
-    zero_vector = mx.nd.ones((1, HIDDEN_UNITS)) # same dimensionality as hidden units used during training, i.e. 1024
-    lm_state = lm_inference.ModelState([zero_vector])
+    zero_vector = mx.nd.zeros((1, HIDDEN_UNITS)) # same dimensionality as hidden units used during training, i.e. 1024
+    lm_state = lm_inference.ModelState([])
 
     def sentence_assertions_hiddenstate(inferer, sentence, step):
         out, updated_lm_states = inferer.decode_step(lm_states=lm_state,
