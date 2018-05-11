@@ -171,11 +171,11 @@ class InferenceModel(lm_model.LanguageModel):
     def run_decoder(self,
                     prev_word: mx.nd.NDArray,
                     bucket_key: int,
-                    model_state: 'ModelState') -> Tuple[mx.nd.NDArray, mx.nd.NDArray, 'ModelState']:
+                    model_state: 'ModelState') -> Tuple[mx.nd.NDArray, 'ModelState']:
         """
         Runs forward pass of the single-step decoder.
 
-        :return: Decoder stack output (logit inputs or probability distribution), attention scores, updated model state.
+        :return: Decoder stack output (logit inputs or probability distribution) and updated model state.
         """
         batch = mx.io.DataBatch(
             data=[prev_word.as_in_context(self.context)] + model_state.states,
@@ -184,6 +184,8 @@ class InferenceModel(lm_model.LanguageModel):
             provide_data=self._get_decoder_data_shapes(bucket_key))
         self.decoder_module.forward(data_batch=batch, is_train=False)
         out, *model_state.states = self.decoder_module.get_outputs()
+        # print([s.state_shape for s in self.decoder.get_rnn_cells()])
+        # print(self.decoder.state_shapes(1,4))
         return out, model_state
 
     @property
@@ -267,7 +269,7 @@ class LMInferer:
     def decode_step(self,
                     lm_states: ModelState,
                     sentence: mx.nd.NDArray,
-                    step: int) -> Tuple[Union[mx.nd.NDArray, ModelState]]:
+                    step: int) -> Tuple[mx.nd.NDArray, ModelState]:
         """
         :param sentence: single array of integers denoting a sentence string
         :param step: current step of predicting a word. The previous word is located at position step-1 of
