@@ -144,7 +144,7 @@ class InferenceModel(lm_model.LanguageModel):
 
             data_names = [C.TARGET_NAME] + state_names
             label_names = []  # type: List[str]
-            return outputs, data_names, label_names
+            return mx.sym.Group([outputs] + states), data_names, label_names
 
         # pylint: disable=not-callable
         default_bucket_key = self.max_output_len
@@ -184,10 +184,6 @@ class InferenceModel(lm_model.LanguageModel):
             provide_data=self._get_decoder_data_shapes(bucket_key))
         self.decoder_module.forward(data_batch=batch, is_train=False)
         out, *model_state.states = self.decoder_module.get_outputs()
-        # print([s.state_shape for s in self.decoder.get_rnn_cells()])
-        # print(self.decoder.state_shapes(1,4))
-        # print(len(self._get_decoder_data_shapes(bucket_key)))
-        # print(batch.provide_data)
         return out, model_state
 
     @property
