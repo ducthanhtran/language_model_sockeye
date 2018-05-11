@@ -78,7 +78,6 @@ class InferenceModel(lm_model.LanguageModel):
 
         :param max_output_len: Maximum output length.
         """
-
         self.max_output_len = max_output_len
         self.decoder_module, self.decoder_default_bucket_key = self._get_decoder_module()
 
