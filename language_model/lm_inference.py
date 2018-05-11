@@ -198,14 +198,14 @@ class InferenceModel(lm_model.LanguageModel):
 
 
 def load_model(context: mx.context.Context,
-                max_output_len: Optional[int],
-                batch_size: int,
-                model_folder: List[str],
-                checkpoint: Optional[int] = None,
-                softmax_temperature: Optional[float] = None,
-                decoder_return_logit_inputs: bool = False,
-                cache_output_layer_w_b: bool = False) -> Tuple[InferenceModel,
-                                                               Vocab]:
+               max_output_len: Optional[int],
+               batch_size: int,
+               model_folder: List[str],
+               checkpoint: Optional[int] = None,
+               softmax_temperature: Optional[float] = None,
+               decoder_return_logit_inputs: bool = False,
+               cache_output_layer_w_b: bool = False) -> Tuple[InferenceModel,
+                                                              Vocab]:
     """
     Loads a model for inference.
 
