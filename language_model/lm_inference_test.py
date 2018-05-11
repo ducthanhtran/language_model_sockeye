@@ -7,7 +7,6 @@ from . import lm_inference
 
 SWITCHBOARD_PATH = '/work/smt2/tran/work/language_model_sockeye/models/switchboard/output.lr-00003'
 VOC_SIZE = 1029
-HIDDEN_UNITS = 1024
 
 MAX_OUTPUT_LEN = 100
 BATCH_SIZE = 1
@@ -39,7 +38,8 @@ def test_inference_softmax():
                                      batch_size=BATCH_SIZE,
                                      model_folder=SWITCHBOARD_PATH)
 
-    zero_vector = mx.nd.zeros((1,HIDDEN_UNITS)) # same dimensionality as hidden units used during training, i.e. 1024
+    num_hidden = inferer.model.decoder.get_num_hidden()
+    zero_vector = mx.nd.zeros((1, num_hidden)) # same dimensionality as hidden units used during training, i.e. 1024
     lm_state = lm_inference.ModelState([zero_vector, zero_vector])
 
     def sentence_assertions_softmax(inferer, sentence, step):
@@ -66,8 +66,9 @@ def test_inference_hiddenstate():
                                      model_folder=SWITCHBOARD_PATH,
                                      decoder_return_logit_inputs=True)
 
-    zero_vector = mx.nd.zeros((1, HIDDEN_UNITS)) # same dimensionality as hidden units used during training, i.e. 1024
-    lm_state = lm_inference.ModelState([])
+    num_hidden = inferer.model.decoder.get_num_hidden()
+    zero_vector = mx.nd.zeros((1, num_hidden)) # same dimensionality as hidden units used during training, i.e. 1024
+    lm_state = lm_inference.ModelState([zero_vector, zero_vector, zero_vector, zero_vector, zero_vector, zero_vector])
 
     def sentence_assertions_hiddenstate(inferer, sentence, step):
         out, updated_lm_states = inferer.decode_step(lm_states=lm_state,

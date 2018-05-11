@@ -186,6 +186,8 @@ class InferenceModel(lm_model.LanguageModel):
         out, *model_state.states = self.decoder_module.get_outputs()
         # print([s.state_shape for s in self.decoder.get_rnn_cells()])
         # print(self.decoder.state_shapes(1,4))
+        # print(len(self._get_decoder_data_shapes(bucket_key)))
+        # print(batch.provide_data)
         return out, model_state
 
     @property
