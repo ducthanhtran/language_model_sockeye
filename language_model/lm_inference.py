@@ -145,12 +145,24 @@ class InferenceModel(lm_model.LanguageModel):
             data_names = [C.TARGET_NAME] + state_names
             label_names = []  # type: List[str]
             return mx.sym.Group([outputs] + states), data_names, label_names
+            # return mx.sym.Group([outputs]), data_names, label_names
 
         # pylint: disable=not-callable
         default_bucket_key = self.max_output_len
         module = mx.mod.BucketingModule(sym_gen=sym_gen,
                                         default_bucket_key=default_bucket_key,
                                         context=self.context)
+
+        ######################################################################
+        # BUG:
+        print(module.output_names)
+        # ['logit_inputs_output', 'lm_decoder_l1_t0_out_output',
+        #  'lm_decoder_l0_t0_out_output', 'lm_decoder_l0_t0_state_output',
+        #  'lm_decoder_l1_t0_out_output', 'lm_decoder_l1_t0_state_output']
+        #
+        # lm_decoder_l1_t0_out_output appears TWICE!!!!
+        ######################################################################
+
         return module, default_bucket_key
 
     def _get_decoder_data_shapes(self, bucket_key: int) -> List[mx.io.DataDesc]:
