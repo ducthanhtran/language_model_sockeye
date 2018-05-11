@@ -252,7 +252,7 @@ class LMInferer:
     """
     def __init__(self,
                  context: mx.context.Context,
-                 max_output_len: Optional[int],
+                 max_output_len: Optional[int], # really optional? Might need hard default value
                  batch_size: int,
                  model_folder: str,
                  checkpoint: Optional[int] = None,
