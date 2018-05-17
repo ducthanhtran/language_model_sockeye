@@ -144,25 +144,15 @@ class InferenceModel(lm_model.LanguageModel):
 
             data_names = [C.TARGET_NAME] + state_names
             label_names = []  # type: List[str]
-            return mx.sym.Group([outputs] + states), data_names, label_names
-            # return mx.sym.Group([outputs]), data_names, label_names
+            g = mx.sym.Group([outputs] + states)
+            return mx.sym.Group([outputs] + states[1:]), data_names, label_names # NOTE: dirty solution
+            # return mx.sym.Group([outputs] + states), data_names, label_names # yields error due to outputs having the same name (outputs) and states[0] - although this works in sockeye?!
 
         # pylint: disable=not-callable
         default_bucket_key = self.max_output_len
         module = mx.mod.BucketingModule(sym_gen=sym_gen,
                                         default_bucket_key=default_bucket_key,
                                         context=self.context)
-
-        ######################################################################
-        # BUG:
-        print(module.output_names)
-        # ['logit_inputs_output', 'lm_decoder_l1_t0_out_output',
-        #  'lm_decoder_l0_t0_out_output', 'lm_decoder_l0_t0_state_output',
-        #  'lm_decoder_l1_t0_out_output', 'lm_decoder_l1_t0_state_output']
-        #
-        # lm_decoder_l1_t0_out_output appears TWICE!!!!
-        ######################################################################
-
         return module, default_bucket_key
 
     def _get_decoder_data_shapes(self, bucket_key: int) -> List[mx.io.DataDesc]:
@@ -183,20 +173,22 @@ class InferenceModel(lm_model.LanguageModel):
     def run_decoder(self,
                     prev_word: mx.nd.NDArray,
                     bucket_key: int,
-                    model_state: 'ModelState') -> Tuple[mx.nd.NDArray, 'ModelState']:
+                    prev_lm_state: 'ModelState') -> Tuple[mx.nd.NDArray, 'ModelState']:
         """
         Runs forward pass of the single-step decoder.
 
         :return: Decoder stack output (logit inputs or probability distribution) and updated model state.
         """
         batch = mx.io.DataBatch(
-            data=[prev_word.as_in_context(self.context)] + model_state.states,
+            data=[prev_word.as_in_context(self.context)] + prev_lm_state.states,
             label=None,
             bucket_key=bucket_key,
             provide_data=self._get_decoder_data_shapes(bucket_key))
         self.decoder_module.forward(data_batch=batch, is_train=False)
-        out, *model_state.states = self.decoder_module.get_outputs()
-        return out, model_state
+
+        out, *prev_lm_state.states = self.decoder_module.get_outputs()
+        prev_lm_state.states.insert(0, out)
+        return out, prev_lm_state
 
     @property
     def training_max_seq_len_target(self) -> int:
@@ -276,18 +268,27 @@ class LMInferer:
         """
         self.model, self.vocab = load_model(context, max_output_len, batch_size, model_folder, checkpoint, softmax_temperature, decoder_return_logit_inputs, cache_output_layer_w_b)
 
+
     def decode_step(self,
-                    lm_states: ModelState,
-                    sentence: mx.nd.NDArray,
-                    step: int) -> Tuple[mx.nd.NDArray, ModelState]:
+                    batch: mx.nd.NDArray,
+                    prev_lm_states: List[ModelState],
+                    steps: List[int]) -> Tuple[mx.nd.array, List[ModelState]]:
         """
-        :param sentence: single array of integers denoting a sentence string
+        :param batch: has shape (batch_size, max_target_length). Represents partial target sentences that are to
+                      be decoded for next step.
         :param step: current step of predicting a word. The previous word is located at position step-1 of
                      sentence.
-        :return: output
+        :return: output of language model (either softmax vector or hidden state) and updated language model states
+                 that are used for next decoding steps.
         """
-        prev_word = sentence[step-1]
-        output, updated_lm_states = self.model.run_decoder(prev_word=prev_word,
-                                                           bucket_key=step,
-                                                           model_state=lm_states)
-        return output, updated_lm_states
+        outputs = []
+        updated_lm_states = []
+        for i, prev_lm_state in enumerate(prev_lm_states):
+            prev_word = batch[i, steps[i]-1]
+            output, state = self.model.run_decoder(prev_word=prev_word,
+                                                   bucket_key=steps[i],
+                                                   prev_lm_state=prev_lm_state)
+            outputs.append(output)
+            updated_lm_states.append(state)
+
+        return mx.nd.stack(*outputs), updated_lm_states
