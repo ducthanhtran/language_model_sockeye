@@ -33,11 +33,41 @@ def test_loading_models():
                                                     decoder_return_logit_inputs=False)
 
 
-def test_inference_softmax():
+# def test_inference_softmax():
+#     inferer = lm_inference.LMInferer(context=CONTEXT,
+#                                      max_output_len=MAX_OUTPUT_LEN,
+#                                      batch_size=BATCH_SIZE,
+#                                      model_folder=SWITCHBOARD_PATH)
+#     # prepare LM states
+#     num_hidden = inferer.model.decoder.get_num_hidden()
+#     zero_vector = mx.nd.zeros((1, num_hidden)) # same dimensionality as hidden units used during training, i.e. 1024
+#     lm_state_zero = lm_inference.ModelState([zero_vector, zero_vector, zero_vector, zero_vector])
+#     one_vector = mx.nd.ones((1, num_hidden))
+#     lm_state_one = lm_inference.ModelState([one_vector, one_vector, one_vector, one_vector])
+#     prev_lm_states = [lm_state_zero, lm_state_zero, lm_state_zero, lm_state_one]
+#
+#     steps = [1,2,3,3]
+#
+#     # NOTE: this here fails due to wrong forwarding/batch delivery?
+#     out, updated_lm_states = inferer.decode_step(batch=BATCH,
+#                                                  prev_lm_states=prev_lm_states,
+#                                                  steps=steps)
+#     print("Output shape: {}".format(out.shape))
+#     print("Output softmax: {}".format(out))
+#     # assert out.shape == (BATCH.shape[0], 1, VOC_SIZE)
+#     # assert out.sum(axis=3).asscalar() == pytest.approx(1.0, abs=1e-1) # out.sum() is an mx.nd.array - cast to int?
+#
+#     # print("softmax maximum value: {}".format(out.max()))
+#     # print("softmax argmax: {}".format(mx.ndarray.argmax(out, axis=1)))
+#     # print("updated lm_states: {}".format(updated_lm_states.states))# empty?? we did not update correctly
+#     # print("updated lm_states count: {}".format(len(updated_lm_states.states)))
+
+def test_inference_hiddenstate():
     inferer = lm_inference.LMInferer(context=CONTEXT,
                                      max_output_len=MAX_OUTPUT_LEN,
                                      batch_size=BATCH_SIZE,
-                                     model_folder=SWITCHBOARD_PATH)
+                                     model_folder=SWITCHBOARD_PATH,
+                                     decoder_return_logit_inputs=True)
     # prepare LM states
     num_hidden = inferer.model.decoder.get_num_hidden()
     zero_vector = mx.nd.zeros((1, num_hidden)) # same dimensionality as hidden units used during training, i.e. 1024
@@ -51,38 +81,9 @@ def test_inference_softmax():
     out, updated_lm_states = inferer.decode_step(batch=BATCH,
                                                  prev_lm_states=prev_lm_states,
                                                  steps=steps)
-    print("Output shape: {}".format(out.shape))
-    print("Output softmax: {}".format(out))
-    # assert out.shape == (BATCH.shape[0], 1, VOC_SIZE)
-    # assert out.sum(axis=3).asscalar() == pytest.approx(1.0, abs=1e-1) # out.sum() is an mx.nd.array - cast to int?
+    assert out.shape == (BATCH.shape[0], 1, inferer.model.decoder.get_num_hidden())
 
-    # print("softmax maximum value: {}".format(out.max()))
-    # print("softmax argmax: {}".format(mx.ndarray.argmax(out, axis=1)))
-    # print("updated lm_states: {}".format(updated_lm_states.states))# empty?? we did not update correctly
-    # print("updated lm_states count: {}".format(len(updated_lm_states.states)))
+    for lm_state in updated_lm_states:
+        assert lm_state.states # should not be empty
 
-# def test_inference_hiddenstate():
-#     inferer = lm_inference.LMInferer(context=CONTEXT,
-#                                      max_output_len=MAX_OUTPUT_LEN,
-#                                      batch_size=BATCH_SIZE,
-#                                      model_folder=SWITCHBOARD_PATH,
-#                                      decoder_return_logit_inputs=True)
-#     # prepare LM states
-#     num_hidden = inferer.model.decoder.get_num_hidden()
-#     zero_vector = mx.nd.zeros((1, num_hidden)) # same dimensionality as hidden units used during training, i.e. 1024
-#     lm_state_zero = lm_inference.ModelState([zero_vector, zero_vector, zero_vector, zero_vector])
-#     one_vector = mx.nd.ones((1, num_hidden))
-#     lm_state_one = lm_inference.ModelState([one_vector, one_vector, one_vector, one_vector])
-#     prev_lm_states = [lm_state_zero, lm_state_zero, lm_state_zero, lm_state_one]
-#
-#     steps = [1,2,3,3]
-#
-#     out, updated_lm_states = inferer.decode_step(batch=BATCH,
-#                                                  prev_lm_states=prev_lm_states,
-#                                                  steps=steps)
-#     assert out.shape == (BATCH.shape[0], 1, inferer.model.decoder.get_num_hidden())
-#
-#     for lm_state in updated_lm_states:
-#         assert lm_state.states # should not be empty
-#
-#     print("output {}".format(out))
+    print("output {}".format(out))
