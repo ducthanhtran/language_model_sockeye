@@ -48,6 +48,10 @@ from .log import setup_main_logger
 from .optimizers import OptimizerConfig
 from .utils import check_condition
 
+sys.path.append('../')
+
+from language_model import lm_common
+
 # Temporary logger, the real one (logging to a file probably, will be created in the main function)
 logger = setup_main_logger(__name__, file_logging=False, console=True)
 
@@ -466,6 +470,11 @@ def create_decoder_config(args: argparse.Namespace, encoder_num_hidden: int) -> 
     if args.decoder == C.TRANSFORMER_TYPE:
         _, decoder_transformer_preprocess = args.transformer_preprocess
         _, decoder_transformer_postprocess = args.transformer_postprocess
+
+        lm_rnn_config = rnn.RNNConfig(cell_type=args.lm_cell_type,
+                                      num_hidden=args.lm_num_hidden,
+                                      num_layers=args.lm_num_layers)
+
         config_decoder = transformer.TransformerConfig(
             batch_size=args.batch_size,
             model_size=args.transformer_model_size,
@@ -484,6 +493,7 @@ def create_decoder_config(args: argparse.Namespace, encoder_num_hidden: int) -> 
             dummy_info=args.dummy_info,
             dummy_type=args.dummy_type,
             dummy_size=args.dummy_size,
+            lm_config=lm_common.LMConfig(rnn_config=lm_rnn_config),
             conv_config=None)
 
     elif args.decoder == C.CONVOLUTION_TYPE:

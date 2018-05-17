@@ -934,12 +934,15 @@ def add_training_args(params):
 
 def add_lm_args(params):
     lm_params = params.add_argument_group("External language model")
-    lm_params.add_argument('--language-model', '-lm',
-                           type=regular_file(),
-                           help='External language model file.')
-    lm_params.add_argument('--dummy-info',
-                           action='store_true',
-                           help='Use dummy vectors instead of LM (for debug).')
+    lm_params.add_argument('--lm-model',
+                           type=regular_folder(),
+                           help='Model folder with language model parameters.')
+    lm_params.add_argument('--lm-num-layers',
+                           type=int_greater_or_equal(0),
+                           help='Number of layers for LM.')
+    lm_params.add_argument('--lm-num-hidden',
+                           type=int_greater_or_equal(0),
+                           help='Number of hidden units for RNN.')
 
 def add_dummy_information(params):
     params_dummy = params.add_argument_group('Dummy information parameters')

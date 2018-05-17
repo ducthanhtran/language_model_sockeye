@@ -10,7 +10,7 @@
 # an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
 # express or implied. See the License for the specific language governing
 # permissions and limitations under the License.
-
+import sys
 from typing import Dict, Optional, Tuple
 
 import mxnet as mx
@@ -19,6 +19,11 @@ import numpy as np
 from . import config
 from . import constants as C
 from . import layers
+
+sys.path.append('../')
+
+from language_model import lm_common
+from language_model import lm_decoder
 
 
 class TransformerConfig(config.Config):
@@ -41,6 +46,7 @@ class TransformerConfig(config.Config):
                  dummy_info: bool,
                  dummy_type: str,
                  dummy_size: int,
+                 lm_config: lm_common.LMConfig,
                  conv_config: Optional['ConvolutionalEmbeddingConfig'] = None) -> None:  # type: ignore
         super().__init__()
         self.batch_size = batch_size
@@ -60,6 +66,7 @@ class TransformerConfig(config.Config):
         self.dummy_info = dummy_info
         self.dummy_type = dummy_type
         self.dummy_size = dummy_size
+        self.lm_config = lm_config
         self.conv_config = conv_config
 
 
@@ -173,6 +180,8 @@ class TransformerDecoderBlock:
                                                dropout=config.dropout_prepost,
                                                prefix="%sff_post_" % prefix)
 
+        self.lm_decoder = LanguageModelDecoder(lm_config=config.lm_config, prefix='lm_decoder')
+
     def __call__(self,
                  target: mx.sym.Symbol,
                  target_bias: mx.sym.Symbol,
@@ -181,7 +190,8 @@ class TransformerDecoderBlock:
                  cache: Optional[Dict[str, Optional[mx.sym.Symbol]]] = None) -> mx.sym.Symbol:
         # TODO: lm (batch, query_max_length, lm_vocab_size)
         if self.config.dummy_info:
-            lm = mx.sym.ones_like(target)  # no lm_vocab_size
+            target_integers = target_embed.arg_dict[C.TARGET_NAME]
+            print(target_integers)
         else:
             lm = None
 
