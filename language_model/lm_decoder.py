@@ -63,7 +63,9 @@ class LanguageModelDecoder(Decoder):
 
         # state.hidden: (batch_size, rnn_num_hidden)
         state = self._step(target_embed_prev, prev_state)
-        return state.hidden, [state.hidden] + state.layer_states
+
+        newstates = [state.hidden] + state.layer_states
+        return state.hidden, newstates
 
     def get_initial_state(self,
                           target_embed_lengths: mx.sym.Symbol) -> RecurrentDecoderState:
