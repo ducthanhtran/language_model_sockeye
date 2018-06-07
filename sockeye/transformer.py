@@ -22,8 +22,8 @@ from . import layers
 
 sys.path.append('../')
 
-from language_model import lm_common
-from language_model import lm_decoder
+# import language_model.lm_common
+# from language_model import lm_decoder
 
 
 class TransformerConfig(config.Config):
@@ -46,7 +46,7 @@ class TransformerConfig(config.Config):
                  dummy_info: bool,
                  dummy_type: str,
                  dummy_size: int,
-                 lm_config: lm_common.LMConfig,
+                 # lm_config: language_model.lm_common.LMConfig,
                  conv_config: Optional['ConvolutionalEmbeddingConfig'] = None) -> None:  # type: ignore
         super().__init__()
         self.batch_size = batch_size

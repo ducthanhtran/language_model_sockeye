@@ -4,9 +4,9 @@ sys.path.append('../')
 
 from .lm_data_io import LMDataConfig
 
+import sockeye.encoder
 from sockeye.config import Config
 from sockeye.rnn import RNNConfig
-from sockeye.encoder import EmbeddingConfig
 from sockeye.loss import LossConfig
 
 JSON_SUFFIX = ".json"
@@ -25,7 +25,7 @@ class LMConfig(Config):
                  target_vocab_size: int,
                  num_embed_target: int,
                  rnn_config: RNNConfig,
-                 config_embed: EmbeddingConfig,
+                 config_embed: sockeye.encoder.EmbeddingConfig,
                  config_loss: LossConfig,
                  weight_tying: bool = False) -> None:
         super().__init__()
