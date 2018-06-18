@@ -11,9 +11,8 @@ from sockeye.decoder import Decoder
 from sockeye.rnn import get_stacked_rnn
 
 
-RecurrentDecoderState = NamedTuple('RecurrentDecoderState', [
-    ('hidden', mx.sym.Symbol),
-    ('layer_states', List[mx.sym.Symbol]),
+LMDecoderState = NamedTuple('LMDecoderState', [
+    ('layer_states', List[mx.sym.Symbol])
 ])
 
 
@@ -40,51 +39,46 @@ class LanguageModelDecoder(Decoder):
         target_embed = mx.sym.split(data=target_embed, num_outputs=target_embed_max_length, axis=1, squeeze_axis=True)
         state = self.get_initial_state(target_embed_lengths)
 
-        hidden_states = []  # type: List[mx.sym.Symbol]
+        top_hidden_states = []  # type: List[mx.sym.Symbol]
         self.reset()
         # TODO: do we take <s> into account here?
         for seq_idx in range(target_embed_max_length):
             # hidden: (batch_size, rnn_num_hidden)
-            state = self._step(target_embed[seq_idx],
-                               state,
-                               seq_idx)
-            hidden_states.append(state.hidden)
+            top_hidden, state = self._step(target_embed[seq_idx],
+                                           state,
+                                           seq_idx)
+            top_hidden_states.append(top_hidden)
 
         # concatenate along time axis: (batch_size, target_embed_max_length, rnn_num_hidden)
-        return mx.sym.stack(*hidden_states, axis=1, name='%shidden_stack' % self.prefix)
+        return mx.sym.stack(*top_hidden_states, axis=1, name='%stop_hidden_stack' % self.prefix)
 
     def decode_step(self,
                     step: int,
                     target_embed_prev: mx.sym.Symbol,
                     *states: mx.sym.Symbol) -> Tuple[mx.sym.Symbol, List[mx.sym.Symbol]]:
-        prev_hidden, *layer_states = states
+        prev_state = LMDecoderState(list(states))
 
-        prev_state = RecurrentDecoderState(prev_hidden, list(layer_states))
+        # top_hidden: (batch_size, rnn_num_hidden)
+        top_hidden, cur_state = self._step(target_embed_prev, prev_state)
 
-        # state.hidden: (batch_size, rnn_num_hidden)
-        state = self._step(target_embed_prev, prev_state)
-
-        newstates = [state.hidden] + state.layer_states
-        return state.hidden, newstates
+        return top_hidden, cur_state.layer_states
 
     def get_initial_state(self,
-                          target_embed_lengths: mx.sym.Symbol) -> RecurrentDecoderState:
+                          target_embed_lengths: mx.sym.Symbol) -> LMDecoderState:
         # For the moment we utilize zero vectors.
         # Infer batch size from target embed lengths.
         zeros = mx.sym.expand_dims(mx.sym.zeros_like(target_embed_lengths), axis=1)
-        hidden = mx.sym.tile(data=zeros, reps=(1, self.num_hidden))
 
         initial_layer_states = []
         for state_idx, (_, init_num_hidden) in enumerate(sum([rnn.state_shape for rnn in self.get_rnn_cells()], [])):
             init = mx.sym.tile(data=zeros, reps=(1, init_num_hidden))
             initial_layer_states.append(init)
-        return RecurrentDecoderState(hidden, initial_layer_states)
+        return LMDecoderState(initial_layer_states)
 
     def init_states(self,
                     target_embed_lengths: mx.sym.Symbol) -> List[mx.sym.Symbol]:
         # Used in inference phase.
-        hidden, layer_states = self.get_initial_state(target_embed_lengths)
-        return [hidden] + layer_states
+        return self.get_initial_state(target_embed_lengths)[0]
 
     def reset(self):
         self.stacked_rnn.reset()
@@ -108,8 +102,7 @@ class LanguageModelDecoder(Decoder):
         :param target_max_length: Current target sequence lengths.
         :return: List of symbolic variables.
         """
-        return [mx.sym.Variable(C.HIDDEN_PREVIOUS_NAME)] + \
-               [mx.sym.Variable("%senc2decinit_%d" % (self.prefix, i)) for i in
+        return [mx.sym.Variable("%sdec_hidden_%d" % (self.prefix, i)) for i in
                 range(len(sum([rnn.state_info for rnn in self.get_rnn_cells()], [])))]
 
     def state_shapes(self,
@@ -123,10 +116,7 @@ class LanguageModelDecoder(Decoder):
         :param target_max_length: Current target sequence length.
         :return: List of shape descriptions.
         """
-        return [mx.io.DataDesc(C.HIDDEN_PREVIOUS_NAME,
-                               (batch_size, self.num_hidden),
-                               layout="NC")] + \
-               [mx.io.DataDesc("%senc2decinit_%d" % (self.prefix, i),
+        return [mx.io.DataDesc("%sdec_hidden_%d" % (self.prefix, i),
                                (batch_size, num_hidden),
                                layout=C.BATCH_MAJOR) for i, (_, num_hidden) in enumerate(
                    sum([rnn.state_shape for rnn in self.get_rnn_cells()], [])
@@ -136,21 +126,16 @@ class LanguageModelDecoder(Decoder):
         return [self.stacked_rnn]
 
     def _step(self, target_embed_prev: mx.sym.Symbol,
-              state: RecurrentDecoderState,
-              seq_idx: int = 0) -> RecurrentDecoderState:
+              state: LMDecoderState,
+              seq_idx: int = 0) -> Tuple[mx.sym.Symbol, LMDecoderState]:
         """
         Performs a single RNN step.
 
         :param target_embed_prev: previous output word as embedded vector
         """
-        # (1) label feedback from previous step is concatenated with hidden states
-        concatenated_input = mx.sym.concat(target_embed_prev, state.hidden, dim=1,
-                                  name="%sconcat_lm_label_feedback_hidden_state_%d" % (self.prefix, seq_idx))
 
-        # (2) unroll stacked RNN for one timestep
+        # Unroll stacked RNN for one timestep
         # rnn_output: (batch_size, rnn_num_hidden)
         # rnn_states: num_layers * [batch_size, rnn_num_hidden]
-        rnn_output, rnn_states = \
-            self.stacked_rnn(concatenated_input, state.layer_states[:self.stacked_rnn_state_number])
-
-        return RecurrentDecoderState(rnn_output, rnn_states)
+        top_hidden, layer_states = self.stacked_rnn(target_embed_prev, state.layer_states[:self.stacked_rnn_state_number])
+        return top_hidden, LMDecoderState(layer_states)
