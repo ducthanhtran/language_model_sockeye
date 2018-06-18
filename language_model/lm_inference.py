@@ -16,9 +16,9 @@ from sockeye.vocab import Vocab, load_source_vocabs, vocab_from_json, are_identi
 
 
 
-class ModelState:
+class LMState:
     """
-    A ModelState encapsulates information about the decoder states of an InferenceModel.
+    A LMState encapsulates information about the decoder states of an InferenceModel.
     """
     def __init__(self, states: List[mx.nd.NDArray]) -> None:
         self.states = states
@@ -30,12 +30,11 @@ class ModelState:
         self.states = [mx.nd.take(ds, best_hyp_indices) for ds in self.states]
 
 
-class InferenceModel(lm_model.LanguageModel):
+class LMInferenceModel(lm_model.LanguageModel):
     """
-    InferenceModel is a SockeyeModel that supports three operations used for inference/decoding:
+    LMInferenceModel is a SockeyeModel that supports three operations used for inference:
 
-    (1) Encoder forward call: encode source sentence and return initial decoder states.
-    (2) Decoder forward call: single decoder step: predict next word.
+    - Decoder forward call: single decoder step: predict next word.
 
     :param config: Configuration object holding details about the model.
     :param params_fname: File with model parameters.
@@ -112,7 +111,7 @@ class InferenceModel(lm_model.LanguageModel):
         def sym_gen(bucket_key: int):
             """
             Returns either softmax output (probs over target vocabulary) or inputs to logit
-            computation, controlled by decoder_return_logit_inputs
+            computation, controlled by decoder_return_logit_inputs.
             """
             decode_step = bucket_key
 
@@ -144,8 +143,7 @@ class InferenceModel(lm_model.LanguageModel):
 
             data_names = [C.TARGET_NAME] + state_names
             label_names = []  # type: List[str]
-            g = mx.sym.Group([outputs] + states)
-            return mx.sym.Group([outputs] + states[1:]), data_names, label_names # NOTE: dirty solution
+            return mx.sym.Group([outputs] + states), data_names, label_names # NOTE: dirty solution
             # return mx.sym.Group([outputs] + states), data_names, label_names # yields error due to outputs having the same name (outputs) and states[0] - although this works in sockeye?!
 
         # pylint: disable=not-callable
@@ -173,7 +171,7 @@ class InferenceModel(lm_model.LanguageModel):
     def run_decoder(self,
                     prev_word: mx.nd.NDArray,
                     bucket_key: int,
-                    prev_lm_state: 'ModelState') -> Tuple[mx.nd.NDArray, 'ModelState']:
+                    prev_lm_state: 'LMState') -> Tuple[mx.nd.NDArray, 'LMState']:
         """
         Runs forward pass of the single-step decoder.
 
@@ -185,9 +183,7 @@ class InferenceModel(lm_model.LanguageModel):
             bucket_key=bucket_key,
             provide_data=self._get_decoder_data_shapes(bucket_key))
         self.decoder_module.forward(data_batch=batch, is_train=False)
-
         out, *prev_lm_state.states = self.decoder_module.get_outputs()
-        prev_lm_state.states.insert(0, out)
         return out, prev_lm_state
 
     @property
@@ -208,7 +204,7 @@ def load_model(context: mx.context.Context,
                checkpoint: Optional[int] = None,
                softmax_temperature: Optional[float] = None,
                decoder_return_logit_inputs: bool = False,
-               cache_output_layer_w_b: bool = False) -> Tuple[InferenceModel,
+               cache_output_layer_w_b: bool = False) -> Tuple[LMInferenceModel,
                                                               Vocab]:
     """
     Loads a model for inference.
@@ -234,7 +230,7 @@ def load_model(context: mx.context.Context,
     else:
         params_fname = os.path.join(model_folder, C.PARAMS_NAME % checkpoint)
 
-    inference_model = InferenceModel(config=model_config,
+    inference_model = LMInferenceModel(config=model_config,
                                      params_fname=params_fname,
                                      context=context,
                                      batch_size=batch_size,
@@ -249,10 +245,10 @@ def load_model(context: mx.context.Context,
 
 class LMInferer:
     """
-    Final wrapper. Uses exactly two inference models, the first one
-    using a softmax output and the second model gives
-    us the hidden state of the RNN decoder.
+    Final wrapper.
+
     """
+
     def __init__(self,
                  context: mx.context.Context,
                  max_output_len: Optional[int], # really optional? Might need hard default value
@@ -270,25 +266,23 @@ class LMInferer:
 
 
     def decode_step(self,
-                    batch: mx.nd.NDArray,
-                    prev_lm_states: List[ModelState],
-                    steps: List[int]) -> Tuple[mx.nd.array, List[ModelState]]:
+                    sequences: mx.nd.NDArray,
+                    state: LMState,
+                    step: int) -> Tuple[mx.nd.array, 'LMState']:
         """
-        :param batch: has shape (batch_size, max_target_length). Represents partial target sentences that are to
-                      be decoded for next step.
-        :param step: current step of predicting a word. The previous word is located at position step-1 of
+        :param sequences: Sequences of target histories. Shape: (batch_size (* beam_size) * max_output_length).
+        :param step: Current step of predicting a word. The previous word is located at position step-1 of
                      sentence.
-        :return: output of language model (either softmax vector or hidden state) and updated language model states
+        :return: Output of LM (either softmax vector or hidden state) and updated language model states
                  that are used for next decoding steps.
         """
-        outputs = []
-        updated_lm_states = []
-        for i, prev_lm_state in enumerate(prev_lm_states):
-            prev_word = batch[i, steps[i]-1]
-            output, state = self.model.run_decoder(prev_word=prev_word,
-                                                   bucket_key=steps[i],
-                                                   prev_lm_state=prev_lm_state)
-            outputs.append(output)
-            updated_lm_states.append(state)
 
-        return mx.nd.stack(*outputs), updated_lm_states
+        prev_word = sequences[:, step - 1]
+        print(prev_word)
+        output, updated_state = self.model.run_decoder(prev_word=prev_word,
+                                                       bucket_key=step,
+                                                       prev_lm_state=state)
+        return output, updated_state
+
+    def decode_sequence(self):
+        pass
